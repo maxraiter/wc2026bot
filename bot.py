@@ -1,7 +1,7 @@
 import os
 import logging
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -28,12 +28,12 @@ TEAMS = [
     "🇧🇪 Бельгия", "🇩🇪 Германия", "🇭🇷 Хорватия", "🇺🇸 США",
     "🇺🇾 Уругвай", "🇨🇴 Колумбия", "🇦🇹 Австрия", "🇨🇭 Швейцария",
     "🇯🇵 Япония", "🇸🇳 Сенегал", "🇪🇨 Эквадор", "🇵🇦 Панама",
-    "🇲🇽 Мексика", "🇰🇷 Южная Корея", "🇳🇴 Норвегия", "🇹🇷 Турция",
+    "🇲🇽 Мексика", "🇰🇷 Ю. Корея", "🇳🇴 Норвегия", "🇹🇷 Турция",
     "🇦🇺 Австралия", "🏴󠁧󠁢󠁳󠁣󠁴󠁿 Шотландия", "🇮🇷 Иран", "🇩🇿 Алжир",
     "🇪🇬 Египет", "🇸🇦 Саудовская Аравия", "🇨🇦 Канада", "🇶🇦 Катар",
     "🇯🇴 Иордания", "🇺🇿 Узбекистан", "🇨🇮 Кот-д'Ивуар", "🇹🇳 Тунис",
     "🇵🇾 Парагвай", "🇮🇶 Ирак", "🇿🇦 ЮАР", "🇬🇭 Гана",
-    "🇧🇦 Босния и Герцеговина", "🇸🇪 Швеция", "🇨🇿 Чехия", "🇳🇿 Новая Зеландия",
+    "🇧🇦 Босния", "🇸🇪 Швеция", "🇨🇿 Чехия", "🇳🇿 Н. Зеландия",
     "🇨🇩 ДР Конго", "🇨🇻 Кабо-Верде", "🇭🇹 Гаити", "🇨🇼 Кюрасао",
 ]
 
@@ -88,11 +88,8 @@ def is_part1_locked():
     return False
 
 def format_time_cet(kickoff_str):
-    """Форматирует время в CET (UTC+2 летом)"""
     dt = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
-    # UTC+2
-    from datetime import timedelta
-    dt_cet = dt + timedelta(hours=2) if dt.utcoffset() is None else dt.astimezone(timezone.utc) + timedelta(hours=2)
+    dt_cet = dt.astimezone(timezone(timedelta(hours=2)))
     return dt_cet.strftime("%d.%m %H:%M")
 
 def teams_keyboard(selected=None, page=0):
@@ -118,22 +115,19 @@ def teams_keyboard(selected=None, page=0):
         buttons.append(nav)
     return InlineKeyboardMarkup(buttons)
 
-def score_keyboard(match_id, home_score=None, away_score=None):
-    """Клавиатура выбора счёта — два ряда 0-9"""
+def score_keyboard(match_id, home_score=None, away_score=None, is_double=False):
     digits = [str(i) for i in range(10)]
     home_row = []
     away_row = []
     for d in digits:
-        mark_h = "✅" if str(home_score) == d else d
-        mark_a = "✅" if str(away_score) == d else d
+        mark_h = f"✅{d}" if str(home_score) == d else d
+        mark_a = f"✅{d}" if str(away_score) == d else d
         home_row.append(InlineKeyboardButton(mark_h, callback_data=f"sh:{match_id}:{d}"))
         away_row.append(InlineKeyboardButton(mark_a, callback_data=f"sa:{match_id}:{d}"))
     buttons = [home_row, away_row]
     if home_score is not None and away_score is not None:
-        buttons.append([InlineKeyboardButton(
-            f"🔥 X2 за этот матч",
-            callback_data=f"double_toggle:{match_id}"
-        )])
+        double_label = "🔥 X2 — ВКЛ (нажми чтобы выкл)" if is_double else "🔥 Сделать этот матч X2"
+        buttons.append([InlineKeyboardButton(double_label, callback_data=f"double_toggle:{match_id}")])
         buttons.append([InlineKeyboardButton(
             f"✅ Сохранить {home_score}:{away_score}",
             callback_data=f"save_pred:{match_id}"
@@ -163,8 +157,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(
         f"👋 Привет, {participant['name']}!\n\nДобро пожаловать на конкурс прогнозов Чемпионата Мира 2026!\n\n"
-           "Мы отлично проведем ближайшие месяц! Выбери дальнейшие действия в меню.\n"
-           "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.",
+        "Мы отлично проведем ближайшие месяц! Выбери дальнейшие действия в меню.\n\n"
+        "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.",
         reply_markup=main_menu_keyboard(user.id)
     )
 
@@ -188,10 +182,6 @@ async def back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     await query.edit_message_text("Главное меню:", reply_markup=main_menu_keyboard(query.from_user.id))
 
-# ============================================
-# ЧАСТЬ 1
-# ============================================
-
 async def show_part1_menu(query, context):
     user = query.from_user
     participant = get_participant(str(user.id))
@@ -200,7 +190,7 @@ async def show_part1_menu(query, context):
     if pred:
         p = pred[0]
         text = (
-            "🏆 Твой прогноз на ТОП-4 и бомбардира:\n\n"
+            "🏆 Твой прогноз на Топ-4 и бомбардира:\n\n"
             f"🥇 1 место: {p['team_1st'] or '—'}\n"
             f"🥈 2 место: {p['team_2nd'] or '—'}\n"
             f"🥉 3 место: {p['team_3rd'] or '—'}\n"
@@ -285,10 +275,6 @@ async def part1_scorer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-# ============================================
-# ЧАСТЬ 2 — Матчи
-# ============================================
-
 async def show_matches_menu(query, context):
     days = sb_get("game_days", {"select": "*", "order": "day_number"})
     if not days:
@@ -334,7 +320,7 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     preds = {p["match_id"]: p for p in preds_res}
     date_str = DAY_DATES.get(day["day_number"], "")
     text = f"📅 День {day['day_number']} — {date_str}\n"
-    text += "⏰ Время указано по Берлину (UTC+2)\n"
+    text += "🕐 Начало матчей по Центральноевропейскому времени (UTC+2)\n"
     text += "🔒 Прогнозы заблокированы\n\n" if locked else "📝 Открыт для прогнозов\n\n"
     buttons = []
     for m in matches:
@@ -346,11 +332,11 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if m["is_finished"]:
                 real = f"{m['home_score']}:{m['away_score']}"
                 pts = pred["points_earned"]
-                label = f"✅ {m['home_team']} {score} {m['away_team']} → {real} +{pts}){double_mark}"
+                label = f"✅ {m['home_team']} {score} {m['away_team']} → {real} (+{pts}){double_mark}"
             else:
                 label = f"📝 {m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
         else:
-            label = f"❓ {m['home_team']} — {m['away_team']} {time_str}"
+            label = f"{m['home_team']} — : — {m['away_team']} {time_str}"
         if not locked and not m["is_finished"]:
             buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
         else:
@@ -359,52 +345,85 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 async def show_prediction_screen(query, context, match_id, home_score=None, away_score=None, is_double=False):
-    """Показываем экран прогноза с двумя рядами кнопок"""
     match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
     time_str = format_time_cet(match["kickoff_at"])
-
     text = (
         f"⚽ {match['home_team']} vs {match['away_team']}\n"
-        f"🕐 {time_str} (по Берлину, UTC+2)\n\n"
+        f"🕐 {time_str} (UTC+2)\n\n"
+        f"{match['home_team']}:\n\n"
+        f"{match['away_team']}:"
     )
     if home_score is not None and away_score is not None:
         double_text = " 🔥×2" if is_double else ""
-        text += f"Твой прогноз: {home_score}:{away_score}{double_text}\n\n"
-    text += f"Голы {match['home_team']}:\n(первый ряд кнопок)\n\n"
-    text += f"Голы {match['away_team']}:\n(второй ряд кнопок)"
+        text = (
+            f"⚽ {match['home_team']} vs {match['away_team']}\n"
+            f"🕐 {time_str} (UTC+2)\n\n"
+            f"{match['home_team']}:\n\n"
+            f"{match['away_team']}:\n\n"
+            f"Твой прогноз: {home_score}:{away_score}{double_text}"
+        )
+    await query.edit_message_text(text, reply_markup=score_keyboard(match_id, home_score, away_score, is_double))
 
-    await query.edit_message_text(text, reply_markup=score_keyboard(match_id, home_score, away_score))
+async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "noop":
+        return
+    match_id = query.data.split(":")[1]
+    user = query.from_user
+    participant = get_participant(str(user.id))
+    existing = sb_get("predictions", {
+        "participant_id": f"eq.{participant['id']}",
+        "match_id": f"eq.{match_id}",
+        "select": "*"
+    })
+    if existing:
+        p = existing[0]
+        context.user_data[f"home_{match_id}"] = p["home_score_pred"]
+        context.user_data[f"away_{match_id}"] = p["away_score_pred"]
+        context.user_data[f"double_{match_id}"] = p["is_double"]
+    await show_prediction_screen(
+        query, context, match_id,
+        context.user_data.get(f"home_{match_id}"),
+        context.user_data.get(f"away_{match_id}"),
+        context.user_data.get(f"double_{match_id}", False)
+    )
 
 async def handle_score_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     _, match_id, digit = query.data.split(":")
     context.user_data[f"home_{match_id}"] = int(digit)
-    home = context.user_data.get(f"home_{match_id}")
-    away = context.user_data.get(f"away_{match_id}")
-    is_double = context.user_data.get(f"double_{match_id}", False)
-    await show_prediction_screen(query, context, match_id, home, away, is_double)
+    await show_prediction_screen(
+        query, context, match_id,
+        context.user_data.get(f"home_{match_id}"),
+        context.user_data.get(f"away_{match_id}"),
+        context.user_data.get(f"double_{match_id}", False)
+    )
 
 async def handle_score_away(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     _, match_id, digit = query.data.split(":")
     context.user_data[f"away_{match_id}"] = int(digit)
-    home = context.user_data.get(f"home_{match_id}")
-    away = context.user_data.get(f"away_{match_id}")
-    is_double = context.user_data.get(f"double_{match_id}", False)
-    await show_prediction_screen(query, context, match_id, home, away, is_double)
+    await show_prediction_screen(
+        query, context, match_id,
+        context.user_data.get(f"home_{match_id}"),
+        context.user_data.get(f"away_{match_id}"),
+        context.user_data.get(f"double_{match_id}", False)
+    )
 
 async def handle_double_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     match_id = query.data.split(":")[1]
-    current = context.user_data.get(f"double_{match_id}", False)
-    context.user_data[f"double_{match_id}"] = not current
-    home = context.user_data.get(f"home_{match_id}")
-    away = context.user_data.get(f"away_{match_id}")
-    is_double = context.user_data.get(f"double_{match_id}", False)
-    await show_prediction_screen(query, context, match_id, home, away, is_double)
+    context.user_data[f"double_{match_id}"] = not context.user_data.get(f"double_{match_id}", False)
+    await show_prediction_screen(
+        query, context, match_id,
+        context.user_data.get(f"home_{match_id}"),
+        context.user_data.get(f"away_{match_id}"),
+        context.user_data.get(f"double_{match_id}", False)
+    )
 
 async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -413,15 +432,12 @@ async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
     home_score = context.user_data.get(f"home_{match_id}")
     away_score = context.user_data.get(f"away_{match_id}")
     is_double = context.user_data.get(f"double_{match_id}", False)
-
     if home_score is None or away_score is None:
         await query.answer("Выбери счёт для обеих команд!", show_alert=True)
         return
-
     user = query.from_user
     participant = get_participant(str(user.id))
     match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
-
     if is_double:
         day_matches = sb_get("matches", {"game_day_id": f"eq.{match['game_day_id']}", "select": "id"})
         day_ids = ",".join(m["id"] for m in day_matches)
@@ -429,7 +445,6 @@ async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "participant_id": f"eq.{participant['id']}",
             "match_id": f"in.({day_ids})"
         }, {"is_double": False})
-
     data = {
         "participant_id": participant["id"],
         "match_id": match_id,
@@ -452,7 +467,6 @@ async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }, data)
     else:
         sb_post("predictions", data)
-
     double_text = " 🔥×2" if is_double else ""
     await query.edit_message_text(
         f"✅ Прогноз сохранён!\n\n"
@@ -462,37 +476,6 @@ async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("◀️ Назад к матчам", callback_data=f"gameday:{match['game_day_id']}")
         ]])
     )
-
-async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "noop":
-        return
-    match_id = query.data.split(":")[1]
-    user = query.from_user
-    participant = get_participant(str(user.id))
-
-    existing = sb_get("predictions", {
-        "participant_id": f"eq.{participant['id']}",
-        "match_id": f"eq.{match_id}",
-        "select": "*"
-    })
-    if existing:
-        p = existing[0]
-        context.user_data[f"home_{match_id}"] = p["home_score_pred"]
-        context.user_data[f"away_{match_id}"] = p["away_score_pred"]
-        context.user_data[f"double_{match_id}"] = p["is_double"]
-    
-    await show_prediction_screen(
-        query, context, match_id,
-        context.user_data.get(f"home_{match_id}"),
-        context.user_data.get(f"away_{match_id}"),
-        context.user_data.get(f"double_{match_id}", False)
-    )
-
-# ============================================
-# МОИ ПРОГНОЗЫ
-# ============================================
 
 async def show_my_predictions(query, context):
     user = query.from_user
@@ -523,10 +506,6 @@ async def show_my_predictions(query, context):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
     )
 
-# ============================================
-# ТАБЛИЦА ЛИДЕРОВ
-# ============================================
-
 async def show_leaderboard(query, context):
     lb = sb_get("leaderboard", {
         "select": "total_points,part1_points,part2_points,participants(name)",
@@ -547,10 +526,6 @@ async def show_leaderboard(query, context):
         text,
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
     )
-
-# ============================================
-# АДМИН
-# ============================================
 
 async def show_admin_panel(query, context):
     if not is_admin(query.from_user.id):
@@ -662,10 +637,6 @@ async def admin_result_away(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard(update.effective_user.id))
     return ConversationHandler.END
-
-# ============================================
-# ЗАПУСК
-# ============================================
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
