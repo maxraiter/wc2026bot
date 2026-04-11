@@ -109,7 +109,7 @@ def score_keyboard(side):
 
 def main_menu_keyboard(user_id):
     buttons = [
-        [InlineKeyboardButton("🏆 Прогноз Топ-4 и бомбардир", callback_data="menu:part1")],
+        [InlineKeyboardButton("🏆 Прогноз на ТОП-4 (доступно до начала ЧМ)", callback_data="menu:part1")],
         [InlineKeyboardButton("⚽ Прогнозы на матчи", callback_data="menu:matches")],
         [InlineKeyboardButton("📊 Таблица лидеров", callback_data="menu:leaderboard")],
         [InlineKeyboardButton("📋 Мои прогнозы", callback_data="menu:my_predictions")],
@@ -129,7 +129,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     await update.message.reply_text(
-        f"👋 Привет, {participant['name']}!\n\nЧто хочешь сделать?",
+        f"👋 Привет, {participant['name']}!\n\nДобро пожаловать на конкурс прогнозистов ЧМ 2026! Мы отлично проведем время! Выбери в меню дальнейшие действия",
         reply_markup=main_menu_keyboard(user.id)
     )
 
