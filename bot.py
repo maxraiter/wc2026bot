@@ -196,7 +196,7 @@ async def part1_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "part1:edit":
         context.user_data["part1"] = {}
         context.user_data["part1_step"] = "1st"
-        await query.edit_message_text("🥇 Выбери команду — чемпион мира (1 место):", reply_markup=teams_keyboard())
+        await query.edit_message_text("🥇 Кто станет чемпионом мира?", reply_markup=teams_keyboard())
         return PART1_1ST
 
 async def part1_team_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -210,9 +210,9 @@ async def part1_team_selected(update: Update, context: ContextTypes.DEFAULT_TYPE
     step = context.user_data.get("part1_step")
     context.user_data["part1"][step] = team
     next_steps = {
-        "1st": ("2nd", "🥈 Выбери команду — 2 место:"),
-        "2nd": ("3rd", "🥉 Выбери команду — 3 место:"),
-        "3rd": ("4th", "4️⃣ Выбери команду — 4 место:"),
+        "1st": ("2nd", "🥈 Кто займет 2 место?"),
+        "2nd": ("3rd", "🥉 Кто займет 3 место?"),
+        "3rd": ("4th", "4️⃣ Кто займет 4 место?"),
     }
     if step == "4th":
         await query.edit_message_text("⚽ Напиши имя лучшего бомбардира турнира\n(например: Килиан Мбаппе):")
