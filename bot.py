@@ -95,9 +95,9 @@ def teams_keyboard(selected=None, page=0):
         buttons.append(row)
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"page:{page-1}"))
+        nav.append(InlineKeyboardButton("⬅️ Другие команды", callback_data=f"page:{page-1}"))
     if start + per_page < len(TEAMS):
-        nav.append(InlineKeyboardButton("Вперёд ➡️", callback_data=f"page:{page+1}"))
+        nav.append(InlineKeyboardButton("Другие команды ➡️", callback_data=f"page:{page+1}"))
     if nav:
         buttons.append(nav)
     return InlineKeyboardMarkup(buttons)
@@ -123,8 +123,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not participant or participant["payment_status"] != "paid":
         await update.message.reply_text(
             "👋 Привет! Это бот конкурса прогнозов на Чемпионат мира 2026.\n\n"
-            "Чтобы участвовать, нужно оплатить взнос 20€.\n"
-            "Если уже оплатил переводом — напиши организатору."
+            "Чтобы участвовать, нужно оплатить взнос 25€.\n"
+            "Если ты уже оплатил — напиши организаторам, мы все проверим и дадим доступ к боту."
         )
         return
     await update.message.reply_text(
