@@ -1155,117 +1155,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard(update.effective_user.id))
     return ConversationHandler.END
 
-async def post_init(app):
-    asyncio.create_task(fetch_and_update_results(app))
-
-def main():
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
-
-    part1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(part1_callback, pattern="^part1:")],
-        states={
-            PART1_1ST: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
-            PART1_2ND: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
-            PART1_3RD: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
-            PART1_4TH: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
-            PART1_SCORER: [MessageHandler(filters.TEXT & ~filters.COMMAND, part1_scorer)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    admin_add_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_callback, pattern="^admin:add_user$")],
-        states={
-            ADMIN_ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_name)],
-            ADMIN_ADD_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_username)],
-            ADMIN_ADD_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_email)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    admin_part1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_callback, pattern="^admin:part1_results$")],
-        states={
-            ADMIN_PART1_RESULTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_part1_results)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    setteams_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_match_teams_selected, pattern="^admin_match_teams:")],
-        states={
-            SETTEAMS_HOME: [CallbackQueryHandler(handle_setteams_home, pattern="^(st:|st_page:)")],
-            SETTEAMS_AWAY: [CallbackQueryHandler(handle_setteams_away, pattern="^(st2:|st2_page:)")],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(part1_conv)
-    app.add_handler(admin_add_conv)
-    app.add_handler(admin_part1_conv)
-    app.add_handler(setteams_conv)
-
-    # Тест-турнир
-    tpart1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(tpart1_callback, pattern="^tpart1:")],
-        states={
-            TEST_PART1_1ST: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_2ND: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_3RD: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_4TH: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_SCORER: [MessageHandler(filters.TEXT & ~filters.COMMAND, tpart1_scorer)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    tadmin_part1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
-        states={
-            TEST_ADMIN_PART1: [MessageHandler(filters.TEXT & ~filters.COMMAND, test_admin_part1)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(tpart1_conv)
-    app.add_handler(tadmin_part1_conv)
-    app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
-    app.add_handler(CallbackQueryHandler(test_handler, pattern="^test:"))
-    app.add_handler(CallbackQueryHandler(tmenu_back, pattern="^tmenu:back$"))
-    app.add_handler(CallbackQueryHandler(test_start_prediction, pattern="^tpredict:"))
-    app.add_handler(CallbackQueryHandler(test_score_home, pattern="^tsh:"))
-    app.add_handler(CallbackQueryHandler(test_score_away, pattern="^tsa:"))
-    app.add_handler(CallbackQueryHandler(test_double_toggle, pattern="^tdouble:"))
-    app.add_handler(CallbackQueryHandler(test_save_pred, pattern="^tsave:"))
-    app.add_handler(CallbackQueryHandler(test_show_admin_matches, pattern="^test:admin_result$"))
-    app.add_handler(CallbackQueryHandler(test_admin_match_selected, pattern="^tadmin_match:"))
-    app.add_handler(CallbackQueryHandler(test_admin_home, pattern="^tash:"))
-    app.add_handler(CallbackQueryHandler(test_admin_away, pattern="^tasa:"))
-    app.add_handler(CallbackQueryHandler(test_admin_save, pattern="^tasave:"))
-    app.add_handler(CallbackQueryHandler(menu_handler, pattern="^menu:"))
-    app.add_handler(CallbackQueryHandler(show_stage_days, pattern="^stage:"))
-    app.add_handler(CallbackQueryHandler(show_game_day, pattern="^gameday:"))
-    app.add_handler(CallbackQueryHandler(start_prediction, pattern="^predict:"))
-    app.add_handler(CallbackQueryHandler(handle_score_home, pattern="^sh:"))
-    app.add_handler(CallbackQueryHandler(handle_score_away, pattern="^sa:"))
-    app.add_handler(CallbackQueryHandler(handle_double_toggle, pattern="^double_toggle:"))
-    app.add_handler(CallbackQueryHandler(handle_save_pred, pattern="^save_pred:"))
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin:"))
-    app.add_handler(CallbackQueryHandler(admin_stage_selected, pattern="^admin_stage:"))
-    app.add_handler(CallbackQueryHandler(admin_day_selected, pattern="^admin_day:"))
-    app.add_handler(CallbackQueryHandler(admin_match_result_selected, pattern="^admin_match_result:"))
-    app.add_handler(CallbackQueryHandler(handle_admin_score_home, pattern="^ash:"))
-    app.add_handler(CallbackQueryHandler(handle_admin_score_away, pattern="^asa:"))
-    app.add_handler(CallbackQueryHandler(handle_admin_save_result, pattern="^asave:"))
-    app.add_handler(CallbackQueryHandler(show_my_predictions_stage, pattern="^mypred:"))
-    app.add_handler(CallbackQueryHandler(back_handler, pattern="^back:"))
-    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^noop$"))
-
-    logger.info("Бот запущен!")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
-
-
 # ============================================
 # ТЕСТ-ТУРНИР
 # ============================================
@@ -1809,3 +1698,113 @@ async def tmenu_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🧪 Тест-турнир\n\nСегодня играют полуфиналы ЛЕ и ЛК!\nВсе матчи в 21:00 (UTC+2)",
         reply_markup=kb
     )
+async def post_init(app):
+    asyncio.create_task(fetch_and_update_results(app))
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+
+    part1_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(part1_callback, pattern="^part1:")],
+        states={
+            PART1_1ST: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
+            PART1_2ND: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
+            PART1_3RD: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
+            PART1_4TH: [CallbackQueryHandler(part1_team_selected, pattern="^(team:|team_page:)")],
+            PART1_SCORER: [MessageHandler(filters.TEXT & ~filters.COMMAND, part1_scorer)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    admin_add_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_callback, pattern="^admin:add_user$")],
+        states={
+            ADMIN_ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_name)],
+            ADMIN_ADD_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_username)],
+            ADMIN_ADD_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_email)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    admin_part1_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_callback, pattern="^admin:part1_results$")],
+        states={
+            ADMIN_PART1_RESULTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_part1_results)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    setteams_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_match_teams_selected, pattern="^admin_match_teams:")],
+        states={
+            SETTEAMS_HOME: [CallbackQueryHandler(handle_setteams_home, pattern="^(st:|st_page:)")],
+            SETTEAMS_AWAY: [CallbackQueryHandler(handle_setteams_away, pattern="^(st2:|st2_page:)")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(part1_conv)
+    app.add_handler(admin_add_conv)
+    app.add_handler(admin_part1_conv)
+    app.add_handler(setteams_conv)
+
+    # Тест-турнир
+    tpart1_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(tpart1_callback, pattern="^tpart1:")],
+        states={
+            TEST_PART1_1ST: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
+            TEST_PART1_2ND: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
+            TEST_PART1_3RD: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
+            TEST_PART1_4TH: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
+            TEST_PART1_SCORER: [MessageHandler(filters.TEXT & ~filters.COMMAND, tpart1_scorer)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    tadmin_part1_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
+        states={
+            TEST_ADMIN_PART1: [MessageHandler(filters.TEXT & ~filters.COMMAND, test_admin_part1)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    app.add_handler(tpart1_conv)
+    app.add_handler(tadmin_part1_conv)
+    app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
+    app.add_handler(CallbackQueryHandler(test_handler, pattern="^test:"))
+    app.add_handler(CallbackQueryHandler(tmenu_back, pattern="^tmenu:back$"))
+    app.add_handler(CallbackQueryHandler(test_start_prediction, pattern="^tpredict:"))
+    app.add_handler(CallbackQueryHandler(test_score_home, pattern="^tsh:"))
+    app.add_handler(CallbackQueryHandler(test_score_away, pattern="^tsa:"))
+    app.add_handler(CallbackQueryHandler(test_double_toggle, pattern="^tdouble:"))
+    app.add_handler(CallbackQueryHandler(test_save_pred, pattern="^tsave:"))
+    app.add_handler(CallbackQueryHandler(test_show_admin_matches, pattern="^test:admin_result$"))
+    app.add_handler(CallbackQueryHandler(test_admin_match_selected, pattern="^tadmin_match:"))
+    app.add_handler(CallbackQueryHandler(test_admin_home, pattern="^tash:"))
+    app.add_handler(CallbackQueryHandler(test_admin_away, pattern="^tasa:"))
+    app.add_handler(CallbackQueryHandler(test_admin_save, pattern="^tasave:"))
+    app.add_handler(CallbackQueryHandler(menu_handler, pattern="^menu:"))
+    app.add_handler(CallbackQueryHandler(show_stage_days, pattern="^stage:"))
+    app.add_handler(CallbackQueryHandler(show_game_day, pattern="^gameday:"))
+    app.add_handler(CallbackQueryHandler(start_prediction, pattern="^predict:"))
+    app.add_handler(CallbackQueryHandler(handle_score_home, pattern="^sh:"))
+    app.add_handler(CallbackQueryHandler(handle_score_away, pattern="^sa:"))
+    app.add_handler(CallbackQueryHandler(handle_double_toggle, pattern="^double_toggle:"))
+    app.add_handler(CallbackQueryHandler(handle_save_pred, pattern="^save_pred:"))
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin:"))
+    app.add_handler(CallbackQueryHandler(admin_stage_selected, pattern="^admin_stage:"))
+    app.add_handler(CallbackQueryHandler(admin_day_selected, pattern="^admin_day:"))
+    app.add_handler(CallbackQueryHandler(admin_match_result_selected, pattern="^admin_match_result:"))
+    app.add_handler(CallbackQueryHandler(handle_admin_score_home, pattern="^ash:"))
+    app.add_handler(CallbackQueryHandler(handle_admin_score_away, pattern="^asa:"))
+    app.add_handler(CallbackQueryHandler(handle_admin_save_result, pattern="^asave:"))
+    app.add_handler(CallbackQueryHandler(show_my_predictions_stage, pattern="^mypred:"))
+    app.add_handler(CallbackQueryHandler(back_handler, pattern="^back:"))
+    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^noop$"))
+
+    logger.info("Бот запущен!")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
+
