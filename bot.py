@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
     PART1_1ST, PART1_2ND, PART1_3RD, PART1_4TH, PART1_SCORER,
     ADMIN_ADD_NAME, ADMIN_ADD_USERNAME, ADMIN_ADD_EMAIL,
     ADMIN_RESULT_MATCH, ADMIN_RESULT_HOME, ADMIN_RESULT_AWAY,
-) = range(11)
+    ADMIN_SET_TEAMS_MATCH, ADMIN_SET_TEAMS_HOME, ADMIN_SET_TEAMS_AWAY,
+) = range(14)
 
 TEAMS = [
     "🇫🇷 Франция", "🇪🇸 Испания", "🇦🇷 Аргентина", "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Англия",
@@ -42,8 +43,51 @@ DAY_DATES = {
     5: "15 июня", 6: "16 июня", 7: "17 июня", 8: "18 июня",
     9: "19 июня", 10: "20 июня", 11: "21 июня", 12: "22 июня",
     13: "23 июня", 14: "24 июня", 15: "25 июня", 16: "26 июня",
-    17: "27 июня",
+    17: "27 июня", 18: "29 июня", 19: "30 июня", 20: "1 июля",
+    21: "2 июля", 22: "3 июля", 23: "4 июля", 24: "5 июля",
+    25: "6 июля", 26: "7 июля", 27: "8 июля", 28: "9 июля",
+    29: "10 июля", 30: "11 июля", 31: "12 июля", 32: "14 июля",
+    33: "15 июля", 34: "16 июля", 35: "18 июля", 36: "19 июля",
 }
+
+# Маппинг дней к этапам
+STAGE_LABELS = {
+    "group1": "1 тур группового этапа",
+    "group2": "2 тур группового этапа",
+    "group3": "3 тур группового этапа",
+    "r32": "1/16 финала",
+    "r16": "1/8 финала",
+    "qf": "1/4 финала",
+    "sf": "Полуфинал",
+    "3rd": "Матч за 3-е место",
+    "final": "Финал",
+}
+
+STAGE_SHORT = {
+    "group1": "1 тур",
+    "group2": "2 тур",
+    "group3": "3 тур",
+    "r32": "1/16",
+    "r16": "1/8",
+    "qf": "1/4",
+    "sf": "1/2",
+    "3rd": "3-е место",
+    "final": "Финал",
+}
+
+DAY_STAGE = {
+    **{d: "group1" for d in range(1, 8)},
+    **{d: "group2" for d in range(8, 14)},
+    **{d: "group3" for d in range(14, 18)},
+    **{d: "r32" for d in range(18, 24)},
+    **{d: "r16" for d in range(24, 28)},
+    **{d: "qf" for d in range(28, 30)},
+    **{d: "sf" for d in range(30, 32)},
+    33: "3rd",
+    **{d: "final" for d in range(35, 37)},
+}
+
+STAGES_ORDER = ["group1", "group2", "group3", "r32", "r16", "qf", "sf", "3rd", "final"]
 
 def sb_headers():
     return {
@@ -116,12 +160,12 @@ def teams_keyboard(selected=None, page=0):
     return InlineKeyboardMarkup(buttons)
 
 def score_keyboard(match_id, home_score=None, away_score=None, is_double=False):
-    digits = [str(i) for i in range(10)]
+    digits = [str(i) for i in range(8)]
     home_row = []
     away_row = []
     for d in digits:
-        mark_h = f"✅{d}" if str(home_score) == d else d
-        mark_a = f"✅{d}" if str(away_score) == d else d
+        mark_h = f"✅" if str(home_score) == d else d
+        mark_a = f"✅" if str(away_score) == d else d
         home_row.append(InlineKeyboardButton(mark_h, callback_data=f"sh:{match_id}:{d}"))
         away_row.append(InlineKeyboardButton(mark_a, callback_data=f"sa:{match_id}:{d}"))
     buttons = [home_row, away_row]
@@ -133,6 +177,10 @@ def score_keyboard(match_id, home_score=None, away_score=None, is_double=False):
             callback_data=f"save_pred:{match_id}"
         )])
     return InlineKeyboardMarkup(buttons)
+
+def num_emoji(n):
+    emojis = ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣"]
+    return emojis[n] if 0 <= n <= 9 else str(n)
 
 def main_menu_keyboard(user_id):
     buttons = [
@@ -169,7 +217,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "part1":
         await show_part1_menu(query, context)
     elif action == "matches":
-        await show_matches_menu(query, context)
+        await show_stages_menu(query, context)
     elif action == "leaderboard":
         await show_leaderboard(query, context)
     elif action == "my_predictions":
@@ -180,7 +228,15 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Главное меню:", reply_markup=main_menu_keyboard(query.from_user.id))
+    action = query.data.split(":")[1]
+    if action == "main":
+        await query.edit_message_text("Главное меню:", reply_markup=main_menu_keyboard(query.from_user.id))
+    elif action == "stages":
+        await show_stages_menu(query, context)
+
+# ============================================
+# ЧАСТЬ 1
+# ============================================
 
 async def show_part1_menu(query, context):
     user = query.from_user
@@ -275,7 +331,11 @@ async def part1_scorer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-async def show_matches_menu(query, context):
+# ============================================
+# ЧАСТЬ 2 — Этапы и матчи
+# ============================================
+
+async def show_stages_menu(query, context):
     days = sb_get("game_days", {"select": "*", "order": "day_number"})
     if not days:
         await query.edit_message_text(
@@ -283,9 +343,40 @@ async def show_matches_menu(query, context):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
         )
         return
+
+    # Группируем дни по этапам
+    stages_with_days = {}
+    for day in days:
+        stage = DAY_STAGE.get(day["day_number"], "group1")
+        if stage not in stages_with_days:
+            stages_with_days[stage] = []
+        stages_with_days[stage].append(day)
+
+    buttons = []
+    for stage in STAGES_ORDER:
+        if stage not in stages_with_days:
+            continue
+        label = f"📁 {STAGE_LABELS[stage]}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"stage:{stage}")])
+
+    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
+    await query.edit_message_text(
+        "⚽ Выбери этап турнира:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def show_stage_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    stage = query.data.split(":")[1]
+
+    days = sb_get("game_days", {"select": "*", "order": "day_number"})
     now = datetime.now(timezone.utc)
     buttons = []
+
     for day in days:
+        if DAY_STAGE.get(day["day_number"]) != stage:
+            continue
         deadline = datetime.fromisoformat(day["deadline"].replace("Z", "+00:00"))
         locked = now >= deadline
         matches = sb_get("matches", {"game_day_id": f"eq.{day['id']}", "select": "id,is_finished"})
@@ -293,11 +384,13 @@ async def show_matches_menu(query, context):
         finished = sum(1 for m in matches if m["is_finished"])
         status = "✅" if (finished == total and total > 0) else ("🔒" if locked else "📝")
         date_str = DAY_DATES.get(day["day_number"], "")
-        label = f"{status} День {day['day_number']} — {date_str} ({finished}/{total})"
+        short = STAGE_SHORT.get(stage, "")
+        label = f"{status} День {day['day_number']} — {date_str} ({finished}/{total}) · {short}"
         buttons.append([InlineKeyboardButton(label, callback_data=f"gameday:{day['id']}")])
-    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
+
+    buttons.append([InlineKeyboardButton("◀️ К другим этапам", callback_data="back:stages")])
     await query.edit_message_text(
-        "⚽ Выбери игровой день:\n\n📝 открыт  🔒 заблокирован  ✅ сыгран",
+        f"📁 {STAGE_LABELS.get(stage, '')}\n\n📝 открыт  🔒 заблокирован  ✅ сыгран",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -318,9 +411,46 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "select": "*"
     }) if match_ids else []
     preds = {p["match_id"]: p for p in preds_res}
+
     date_str = DAY_DATES.get(day["day_number"], "")
+    stage = DAY_STAGE.get(day["day_number"], "group1")
+    stage_label = STAGE_LABELS.get(stage, "")
+
     text = f"📅 День {day['day_number']} — {date_str}\n"
+    text += f"🏆 {stage_label}\n"
     text += "🕐 Начало матчей по Центральноевропейскому времени (UTC+2)\n"
+
+    # Если день завершён — показываем итоги
+    all_finished = all(m["is_finished"] for m in matches) and len(matches) > 0
+    if all_finished:
+        text += "✅ День завершён\n\n"
+        day_total = 0
+        for m in matches:
+            pred = preds.get(m["id"])
+            time_str = format_time_cet(m["kickoff_at"])
+            real = f"{m['home_score']}:{m['away_score']}"
+            if pred:
+                pred_score = f"{pred['home_score_pred']}:{pred['away_score_pred']}"
+                pts = pred["points_earned"]
+                day_total += pts
+                if pred["is_double"]:
+                    base_pts = pts // 2
+                    double_mark = f" +{base_pts} 🔥×2 = {pts}"
+                else:
+                    double_mark = f" +{pts}"
+                result_icon = "✅" if pts > 0 else "❌"
+                text += f"{m['home_team']} {real} {m['away_team']}\nТвой прогноз: {pred_score} {result_icon}{double_mark}\n\n"
+            else:
+                text += f"{m['home_team']} {real} {m['away_team']}\nПрогноза не было\n\n"
+        text += f"⚡️ Итого за день: {day_total} баллов"
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data=f"stage:{stage}")
+            ]])
+        )
+        return
+
     text += "🔒 Прогнозы заблокированы\n\n" if locked else "📝 Открыт для прогнозов\n\n"
     buttons = []
     for m in matches:
@@ -329,39 +459,31 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pred:
             score = f"{pred['home_score_pred']}:{pred['away_score_pred']}"
             double_mark = " 🔥×2" if pred["is_double"] else ""
-            if m["is_finished"]:
-                real = f"{m['home_score']}:{m['away_score']}"
-                pts = pred["points_earned"]
-                label = f"✅ {m['home_team']} {score} {m['away_team']} → {real} (+{pts}){double_mark}"
-            else:
-                label = f"📝 {m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
+            label = f"📝 {m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
         else:
             label = f"{m['home_team']} — : — {m['away_team']} {time_str}"
-        if not locked and not m["is_finished"]:
+        if not locked and not m["is_finished"] and m["home_team"] != "TBD":
             buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
         else:
             buttons.append([InlineKeyboardButton(label, callback_data="noop")])
-    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="menu:matches")])
+    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"stage:{stage}")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 async def show_prediction_screen(query, context, match_id, home_score=None, away_score=None, is_double=False):
     match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
     time_str = format_time_cet(match["kickoff_at"])
+
+    h = num_emoji(home_score) if home_score is not None else "—"
+    a = num_emoji(away_score) if away_score is not None else "—"
+    double_text = " 🔥×2" if is_double else ""
+
     text = (
         f"⚽ {match['home_team']} vs {match['away_team']}\n"
         f"🕐 {time_str} (UTC+2)\n\n"
         f"{match['home_team']}:\n\n"
-        f"{match['away_team']}:"
+        f"{match['away_team']}:\n\n"
+        f"Счёт: {h} : {a}{double_text}"
     )
-    if home_score is not None and away_score is not None:
-        double_text = " 🔥×2" if is_double else ""
-        text = (
-            f"⚽ {match['home_team']} vs {match['away_team']}\n"
-            f"🕐 {time_str} (UTC+2)\n\n"
-            f"{match['home_team']}:\n\n"
-            f"{match['away_team']}:\n\n"
-            f"Твой прогноз: {home_score}:{away_score}{double_text}"
-        )
     await query.edit_message_text(text, reply_markup=score_keyboard(match_id, home_score, away_score, is_double))
 
 async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -468,6 +590,7 @@ async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         sb_post("predictions", data)
     double_text = " 🔥×2" if is_double else ""
+    stage = DAY_STAGE.get(sb_get("game_days", {"id": f"eq.{match['game_day_id']}", "select": "day_number"})[0]["day_number"], "group1")
     await query.edit_message_text(
         f"✅ Прогноз сохранён!\n\n"
         f"⚽ {match['home_team']} {home_score}:{away_score} {match['away_team']}{double_text}\n\n"
@@ -476,6 +599,10 @@ async def handle_save_pred(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("◀️ Назад к матчам", callback_data=f"gameday:{match['game_day_id']}")
         ]])
     )
+
+# ============================================
+# МОИ ПРОГНОЗЫ
+# ============================================
 
 async def show_my_predictions(query, context):
     user = query.from_user
@@ -506,6 +633,10 @@ async def show_my_predictions(query, context):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
     )
 
+# ============================================
+# ТАБЛИЦА ЛИДЕРОВ
+# ============================================
+
 async def show_leaderboard(query, context):
     lb = sb_get("leaderboard", {
         "select": "total_points,part1_points,part2_points,participants(name)",
@@ -527,6 +658,10 @@ async def show_leaderboard(query, context):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
     )
 
+# ============================================
+# АДМИН
+# ============================================
+
 async def show_admin_panel(query, context):
     if not is_admin(query.from_user.id):
         await query.answer("Нет доступа.", show_alert=True)
@@ -534,6 +669,7 @@ async def show_admin_panel(query, context):
     await query.edit_message_text("🔧 Админ-панель", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Добавить участника", callback_data="admin:add_user")],
         [InlineKeyboardButton("⚽ Ввести результат матча", callback_data="admin:add_result")],
+        [InlineKeyboardButton("🏆 Заполнить команды матча", callback_data="admin:set_teams")],
         [InlineKeyboardButton("📋 Список участников", callback_data="admin:list_users")],
         [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
     ]))
@@ -550,6 +686,9 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "add_result":
         await query.edit_message_text("⚽ Введи номер матча (match_number):")
         return ADMIN_RESULT_MATCH
+    elif action == "set_teams":
+        await query.edit_message_text("🏆 Введи номер матча для заполнения команд:")
+        return ADMIN_SET_TEAMS_MATCH
     elif action == "list_users":
         users = sb_get("participants", {"select": "*", "order": "created_at"})
         if not users:
@@ -634,6 +773,42 @@ async def admin_result_away(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введи число:")
         return ADMIN_RESULT_AWAY
 
+async def admin_set_teams_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        num = int(update.message.text.strip())
+        match = sb_get("matches", {"match_number": f"eq.{num}", "select": "*"})
+        if not match:
+            await update.message.reply_text("Матч не найден. Попробуй ещё раз:")
+            return ADMIN_SET_TEAMS_MATCH
+        context.user_data["set_teams_match"] = match[0]
+        m = match[0]
+        await update.message.reply_text(
+            f"Матч #{num}: {m['home_team']} — {m['away_team']}\n\nВведи название первой команды:"
+        )
+        return ADMIN_SET_TEAMS_HOME
+    except ValueError:
+        await update.message.reply_text("Введи число:")
+        return ADMIN_SET_TEAMS_MATCH
+
+async def admin_set_teams_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["set_teams_home"] = update.message.text.strip()
+    await update.message.reply_text("Введи название второй команды:")
+    return ADMIN_SET_TEAMS_AWAY
+
+async def admin_set_teams_away(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    away = update.message.text.strip()
+    home = context.user_data["set_teams_home"]
+    match = context.user_data["set_teams_match"]
+    sb_patch("matches", {"id": f"eq.{match['id']}"}, {
+        "home_team": home,
+        "away_team": away,
+    })
+    await update.message.reply_text(
+        f"✅ Команды обновлены!\nМатч #{match['match_number']}: {home} — {away}",
+        reply_markup=main_menu_keyboard(update.effective_user.id)
+    )
+    return ConversationHandler.END
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard(update.effective_user.id))
     return ConversationHandler.END
@@ -673,11 +848,23 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    admin_set_teams_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_callback, pattern="^admin:set_teams$")],
+        states={
+            ADMIN_SET_TEAMS_MATCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_teams_match)],
+            ADMIN_SET_TEAMS_HOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_teams_home)],
+            ADMIN_SET_TEAMS_AWAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_teams_away)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(part1_conv)
     app.add_handler(admin_add_conv)
     app.add_handler(admin_result_conv)
+    app.add_handler(admin_set_teams_conv)
     app.add_handler(CallbackQueryHandler(menu_handler, pattern="^menu:"))
+    app.add_handler(CallbackQueryHandler(show_stage_days, pattern="^stage:"))
     app.add_handler(CallbackQueryHandler(show_game_day, pattern="^gameday:"))
     app.add_handler(CallbackQueryHandler(start_prediction, pattern="^predict:"))
     app.add_handler(CallbackQueryHandler(handle_score_home, pattern="^sh:"))
