@@ -1856,21 +1856,6 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-    app.add_handler(tpart1_conv)
-    app.add_handler(tadmin_part1_conv)
-    app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
-    app.add_handler(CallbackQueryHandler(test_handler, pattern="^test:"))
-    app.add_handler(CallbackQueryHandler(tmenu_back, pattern="^tmenu:back$"))
-    app.add_handler(CallbackQueryHandler(test_start_prediction, pattern="^tpredict:"))
-    app.add_handler(CallbackQueryHandler(test_score_home, pattern="^tsh:"))
-    app.add_handler(CallbackQueryHandler(test_score_away, pattern="^tsa:"))
-    app.add_handler(CallbackQueryHandler(test_double_toggle, pattern="^tdouble:"))
-    app.add_handler(CallbackQueryHandler(test_save_pred, pattern="^tsave:"))
-    app.add_handler(CallbackQueryHandler(test_show_admin_matches, pattern="^test:admin_result$"))
-    app.add_handler(CallbackQueryHandler(test_admin_match_selected, pattern="^tadmin_match:"))
-    app.add_handler(CallbackQueryHandler(test_admin_home, pattern="^tash:"))
-    app.add_handler(CallbackQueryHandler(test_admin_away, pattern="^tasa:"))
-    app.add_handler(CallbackQueryHandler(test_admin_save, pattern="^tasave:"))
     # Тест-турнир хэндлеры
     tadmin_part1_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
