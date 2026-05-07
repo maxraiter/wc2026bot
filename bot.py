@@ -1342,12 +1342,13 @@ async def tpart1_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["tpart1"] = {}
         context.user_data["tpart1_step"] = "1st"
         await query.edit_message_text("🥇 Кто займет 1 место?", reply_markup=test_teams_keyboard(step="1st"))
-        return TEST_PART1_1ST
 
 async def tpart1_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     _, step, team = query.data.split(":", 2)
+    if "tpart1" not in context.user_data:
+        context.user_data["tpart1"] = {}
     context.user_data["tpart1"][step] = team
     next_steps = {
         "1st": ("2nd", "🥈 Кто займет 2 место?"),
@@ -1355,18 +1356,24 @@ async def tpart1_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3rd": ("4th", "4️⃣ Кто займет 4 место?"),
     }
     if step == "4th":
-        await query.edit_message_text("⚽ Лучший бомбардир вечера (напиши имя):")
-        return TEST_PART1_SCORER
+        await query.edit_message_text("⚽ Лучший бомбардир вечера (напиши имя)\n\nНапиши имя в чат:")
+        context.user_data["waiting_scorer"] = True
+        return
     next_step, next_text = next_steps[step]
     context.user_data["tpart1_step"] = next_step
     await query.edit_message_text(next_text, reply_markup=test_teams_keyboard(step=next_step))
-    return TEST_PART1_1ST
 
 async def tpart1_scorer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("waiting_scorer"):
+        return
+    context.user_data["waiting_scorer"] = False
     scorer = update.message.text.strip()
     user = update.effective_user
     participant = get_participant(str(user.id))
-    p = context.user_data["tpart1"]
+    p = context.user_data.get("tpart1", {})
+    if not all(k in p for k in ["1st", "2nd", "3rd", "4th"]):
+        await update.message.reply_text("Что-то пошло не так. Попробуй ещё раз.")
+        return
     data = {
         "participant_id": participant["id"],
         "team_1st": p["1st"], "team_2nd": p["2nd"],
@@ -1383,7 +1390,6 @@ async def tpart1_scorer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Прогноз сохранён!\n\n🥇 {p['1st']}\n🥈 {p['2nd']}\n🥉 {p['3rd']}\n4️⃣ {p['4th']}\n⚽ {scorer}",
         reply_markup=get_test_menu_kb(user.id)
     )
-    return ConversationHandler.END
 
 # ---- МАТЧИ ----
 
@@ -1866,17 +1872,6 @@ def main():
     app.add_handler(CallbackQueryHandler(test_admin_away, pattern="^tasa:"))
     app.add_handler(CallbackQueryHandler(test_admin_save, pattern="^tasave:"))
     # Тест-турнир хэндлеры
-    tpart1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(tpart1_callback, pattern="^tpart1:")],
-        states={
-            TEST_PART1_1ST: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_2ND: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_3RD: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_4TH: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_SCORER: [MessageHandler(filters.TEXT & ~filters.COMMAND, tpart1_scorer)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
     tadmin_part1_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
         states={
@@ -1884,8 +1879,10 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-    app.add_handler(tpart1_conv)
     app.add_handler(tadmin_part1_conv)
+    app.add_handler(CallbackQueryHandler(tpart1_callback, pattern="^tpart1:"))
+    app.add_handler(CallbackQueryHandler(tpart1_team, pattern="^ttest:"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_scorer))
     app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
     app.add_handler(CallbackQueryHandler(test_handler, pattern="^test:"))
     app.add_handler(CallbackQueryHandler(tmenu_back, pattern="^tmenu:back$"))
