@@ -1838,24 +1838,6 @@ def main():
     app.add_handler(setteams_conv)
 
     # Тест-турнир
-    tpart1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(tpart1_callback, pattern="^tpart1:")],
-        states={
-            TEST_PART1_1ST: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_2ND: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_3RD: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_4TH: [CallbackQueryHandler(tpart1_team, pattern="^ttest:")],
-            TEST_PART1_SCORER: [MessageHandler(filters.TEXT & ~filters.COMMAND, tpart1_scorer)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    tadmin_part1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
-        states={
-            TEST_ADMIN_PART1: [MessageHandler(filters.TEXT & ~filters.COMMAND, test_admin_part1)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
     # Тест-турнир хэндлеры
     tadmin_part1_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
