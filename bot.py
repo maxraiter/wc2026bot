@@ -1866,8 +1866,8 @@ def main():
     # Тест-турнир хэндлеры
 
     app.add_handler(CallbackQueryHandler(tpart1_start, pattern="^tpart1:edit$"))
-    app.add_handler(CallbackQueryHandler(tpart1_team, pattern="^ttest:"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_scorer))
+    app.add_handler(CallbackQueryHandler(ttest_team, pattern="^ttest:"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_text_handler))
     app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
     app.add_handler(CallbackQueryHandler(test_handler, pattern="^test:"))
     app.add_handler(CallbackQueryHandler(tmenu_back, pattern="^tmenu:back$"))
@@ -1881,7 +1881,7 @@ def main():
     app.add_handler(CallbackQueryHandler(test_admin_home, pattern="^tash:"))
     app.add_handler(CallbackQueryHandler(test_admin_away, pattern="^tasa:"))
     app.add_handler(CallbackQueryHandler(test_admin_save, pattern="^tasave:"))
-    app.add_handler(CallbackQueryHandler(admin_delete_user, pattern="^admin_delete:"))
+    
 
     # Тест-турнир
     app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
@@ -1899,7 +1899,7 @@ def main():
     app.add_handler(CallbackQueryHandler(test_admin_home, pattern="^tash:"))
     app.add_handler(CallbackQueryHandler(test_admin_away, pattern="^tasa:"))
     app.add_handler(CallbackQueryHandler(test_admin_save, pattern="^tasave:"))
-    app.add_handler(CallbackQueryHandler(admin_delete_user, pattern="^admin_delete:"))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_text_handler))
 
     app.add_handler(CallbackQueryHandler(menu_handler, pattern="^menu:"))
