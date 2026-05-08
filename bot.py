@@ -1864,14 +1864,7 @@ def main():
 
     # Тест-турнир
     # Тест-турнир хэндлеры
-    tadmin_part1_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(test_handler, pattern="^test:admin_part1$")],
-        states={
-            TEST_ADMIN_PART1: [MessageHandler(filters.TEXT & ~filters.COMMAND, test_admin_part1)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    app.add_handler(tadmin_part1_conv)
+
     app.add_handler(CallbackQueryHandler(tpart1_callback, pattern="^tpart1:"))
     app.add_handler(CallbackQueryHandler(tpart1_team, pattern="^ttest:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_scorer))
