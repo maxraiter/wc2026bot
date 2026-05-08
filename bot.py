@@ -1865,7 +1865,7 @@ def main():
     # Тест-турнир
     # Тест-турнир хэндлеры
 
-    app.add_handler(CallbackQueryHandler(tpart1_callback, pattern="^tpart1:"))
+    app.add_handler(CallbackQueryHandler(tpart1_start, pattern="^tpart1:edit$"))
     app.add_handler(CallbackQueryHandler(tpart1_team, pattern="^ttest:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_scorer))
     app.add_handler(CallbackQueryHandler(test_menu, pattern="^goto:test$"))
