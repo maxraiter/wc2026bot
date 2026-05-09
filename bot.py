@@ -1856,6 +1856,7 @@ async def test_admin_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---- АВТОПОДТЯЖКА ----
 
 async def check_test_match_results():
+    logger.info(f"DEBUG: FOOTBALL_DATA_KEY = {FOOTBALL_DATA_KEY[:5] if FOOTBALL_DATA_KEY else None}")
     now = datetime.now(timezone.utc)
     matches = sb_get("test_matches", {"select": "*", "is_finished": "eq.false"})
     for match in matches:
