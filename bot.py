@@ -1896,7 +1896,7 @@ async def try_fetch_test_result(match):
         logger.error(f"Ошибка тест-API #{match['match_number']}: {e}")
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).post_init(lambda a: asyncio.create_task(fetch_and_update_results(a))).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     part1_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(part1_callback, pattern="^part1:")],
