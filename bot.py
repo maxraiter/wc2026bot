@@ -1869,7 +1869,7 @@ async def try_fetch_test_result(match):
         # АПЛ = 39, Бундеслига = 78
         league_id = 39 if match["tournament"] == "EPL" else 78
         r = httpx.get("https://v3.football.api-sports.io/fixtures", headers=headers,
-            params={"league": league_id, "season": 2025, "date": date_str})
+            params={"league": league_id, "season": 2026, "date": date_str})
         data = r.json()
         home_name = match.get("api_home_team", match["home_team"])
         away_name = match.get("api_away_team", match["away_team"])
