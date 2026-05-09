@@ -46,15 +46,25 @@ TEAMS = [
 ]
 
 DAY_DATES = {
+    # Групповой этап
     1: "11 июня", 2: "12 июня", 3: "13 июня", 4: "14 июня",
     5: "15 июня", 6: "16 июня", 7: "17 июня", 8: "18 июня",
     9: "19 июня", 10: "20 июня", 11: "21 июня", 12: "22 июня",
     13: "23 июня", 14: "24 июня", 15: "25 июня", 16: "26 июня",
-    17: "27 июня", 18: "29 июня", 19: "30 июня", 20: "1 июля",
-    21: "2 июля", 22: "3 июля", 23: "4 июля", 24: "5 июля",
-    25: "6 июля", 26: "7 июля", 27: "8 июля", 28: "9 июля",
-    29: "10 июля", 30: "11 июля", 31: "12 июля", 32: "14 июля",
-    33: "15 июля", 35: "18 июля", 36: "19 июля",
+    17: "27 июня",
+    # 1/16 финала (28 июня — 3 июля)
+    18: "28 июня", 19: "29 июня", 20: "30 июня",
+    21: "1 июля", 22: "2 июля", 23: "3 июля",
+    # 1/8 финала (4-7 июля)
+    24: "4 июля", 25: "5 июля", 26: "6 июля", 27: "7 июля",
+    # 1/4 финала (9-11 июля)
+    28: "9 июля", 29: "10 июля", 30: "11 июля",
+    # Полуфиналы (14-15 июля)
+    31: "14 июля", 32: "15 июля",
+    # Матч за 3-е место (18 июля)
+    33: "18 июля",
+    # Финал (19 июля)
+    34: "19 июля",
 }
 
 STAGE_LABELS = {
@@ -81,9 +91,10 @@ DAY_STAGE = {
     **{d: "group3" for d in range(14, 18)},
     **{d: "r32" for d in range(18, 24)},
     **{d: "r16" for d in range(24, 28)},
-    **{d: "qf" for d in range(28, 30)},
-    **{d: "sf" for d in range(30, 32)},
-    33: "3rd", 35: "final", 36: "final",
+    **{d: "qf" for d in range(28, 31)},
+    31: "sf", 32: "sf",
+    33: "3rd",
+    34: "final",
 }
 STAGES_ORDER = ["group1", "group2", "group3", "r32", "r16", "qf", "sf", "3rd", "final"]
 DIRECT_STAGES = {"sf", "3rd", "final"}
@@ -765,7 +776,7 @@ async def show_my_predictions_stage(update: Update, context: ContextTypes.DEFAUL
         else:
             time_str = format_time_cet(m["kickoff_at"])
             text += f"📝 {m['home_team']} {pred_score} {m['away_team']} {time_str}{double}\n"
-    text += f"\n⚡️ Очков за этот раздел: {format_points(total)}"
+    text += f"\n⚡️ Очков за этот этап: {format_points(total)}"
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:my_predictions")]]))
 
 # ============================================
@@ -928,6 +939,7 @@ async def show_admin_panel(query, context):
         [InlineKeyboardButton("⚽ Ввести результат матча", callback_data="admin:result_stage")],
         [InlineKeyboardButton("🏆 Заполнить команды матча", callback_data="admin:set_teams_stage")],
         [InlineKeyboardButton("🥇 Ввести итоги Топ-4", callback_data="admin:part1_results")],
+        [InlineKeyboardButton("🔄 Обнулить итоги Топ-4", callback_data="admin:part1_reset")],
         [InlineKeyboardButton("📋 Список участников", callback_data="admin:list_users")],
         [InlineKeyboardButton("🗑 Удалить участника", callback_data="admin:delete_user")],
         [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
@@ -948,8 +960,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = "⚽ Выбери стадию для ввода результата:" if is_result else "🏆 Выбери стадию для заполнения команд:"
         days = sb_get("game_days", {"select": "*", "order": "day_number"})
         stages_present = set(DAY_STAGE.get(d["day_number"], "group1") for d in days)
+        # Для заполнения команд — только плей-офф
+        allowed_stages = STAGES_ORDER if is_result else ["r32", "r16", "qf", "sf", "3rd", "final"]
         buttons = []
-        for stage in STAGES_ORDER:
+        for stage in allowed_stages:
             if stage not in stages_present:
                 continue
             emoji = STAGE_EMOJI.get(stage, "📁")
@@ -977,6 +991,23 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             fav = u.get("favorite_team", "—")
             text += f"{method} {u['name']} ({tg}) {fav}\n"
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:admin")]]))
+    elif action == "part1_reset":
+        preds = sb_get("part1_predictions", {"select": "id,participant_id"})
+        for pred in preds:
+            sb_patch("part1_predictions", {"id": f"eq.{pred['id']}"}, {
+                "pts_1st": 0, "pts_2nd": 0, "pts_3rd": 0,
+                "pts_4th": 0, "pts_scorer": 0, "points_calculated": False,
+            })
+            lb = sb_get("leaderboard", {"participant_id": f"eq.{pred['participant_id']}", "select": "part2_points"})
+            part2 = lb[0]["part2_points"] if lb else 0
+            sb_patch("leaderboard", {"participant_id": f"eq.{pred['participant_id']}"}, {
+                "part1_points": 0, "total_points": part2,
+            })
+        await query.edit_message_text(
+            f"✅ Итоги Топ-4 обнулены для {len(preds)} участников.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:admin")]])
+        )
+
     elif action == "delete_user":
         users = sb_get("participants", {"select": "id,name,telegram_username", "order": "name"})
         if not users:
@@ -1166,9 +1197,12 @@ async def handle_admin_save_result(update: Update, context: ContextTypes.DEFAULT
         buttons.append([InlineKeyboardButton(label, callback_data=f"admin_match_result:{m['id']}")])
     stage = context.user_data.get("admin_stage", "group1")
     buttons.append([InlineKeyboardButton("◀️ К стадиям", callback_data=f"admin_stage:{stage}")])
+    day_id = context.user_data.get("admin_day_id", match["game_day_id"])
+    stage = context.user_data.get("admin_stage", "group1")
+    buttons_with_back = buttons + [[InlineKeyboardButton("◀️ К этапу", callback_data=f"admin_stage:{stage}")]]
     await query.edit_message_text(
         f"✅ {match['home_team']} {home}:{away} {match['away_team']}\nОчки пересчитаны!\n\nВыбери следующий матч:",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        reply_markup=InlineKeyboardMarkup(buttons_with_back)
     )
 
 async def admin_match_teams_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1848,6 +1882,7 @@ async def test_admin_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         label = f"{trn} {m['home_team']} — {m['away_team']}{score}"
         buttons.append([InlineKeyboardButton(label, callback_data=f"tadmin_match:{m['id']}")])
     buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="tmenu:back")])
+    buttons.append([InlineKeyboardButton("◀️ Назад в меню", callback_data="tmenu:back")])
     await query.edit_message_text(
         f"✅ {match['home_team']} {home}:{away} {match['away_team']}\n\nВыбери следующий матч:",
         reply_markup=InlineKeyboardMarkup(buttons)
