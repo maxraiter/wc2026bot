@@ -98,8 +98,19 @@ DAY_STAGE = {
 }
 STAGES_ORDER = ["group1", "group2", "group3", "r32", "r16", "qf", "sf", "3rd", "final"]
 DIRECT_STAGES = {"sf", "3rd", "final"}
-NO_DOUBLE_STAGES = {"3rd", "final"}
+NO_DOUBLE_STAGES = {"qf", "sf", "3rd", "final"}
 PLAYOFF_STAGES = {"r32", "r16", "qf", "sf", "3rd", "final"}
+
+def format_fans(n):
+    if 11 <= n % 100 <= 19:
+        return f"{n} болельщиков"
+    r = n % 10
+    if r == 1:
+        return f"{n} болельщик"
+    elif 2 <= r <= 4:
+        return f"{n} болельщика"
+    else:
+        return f"{n} болельщиков"
 
 def format_points(n):
     if 11 <= n % 100 <= 19:
@@ -356,8 +367,8 @@ async def show_part1_menu(query, context):
         else:
             await query.edit_message_text(
                 "🏆 Сделай прогноз на Топ-4 и лучшего бомбардира!\n\n"
-                "🥇 1 место — 10 очков\n🥈 2 место — 8 очков\n"
-                "🥉 3 место — 6 очков\n4️⃣ 4 место — 4 очка\n⚽ Бомбардир — 8 очков",
+                "🥇 1 место — 15 очков\n🥈 2 место — 12 очков\n"
+                "🥉 3 место — 10 очков\n4️⃣ 4 место — 8 очков\n⚽ Бомбардир — 8 очков",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📝 Сделать прогноз", callback_data="part1:edit")],
                     [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
@@ -854,9 +865,14 @@ async def show_teams_leaderboard(update: Update, context: ContextTypes.DEFAULT_T
     text = f"📊 Таблица сборных ({offset+1}-{min(offset+per_page, total_teams)} из {total_teams})\n\n"
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     for i, (team, data) in enumerate(chunk, offset + 1):
-        medal = medals.get(i, f"{i}.")
+        text += f"{medal} {team} — {format_points(data['points'])} ({format_fans(data['count'])})\n"
         text += f"{medal} {team} — {format_points(data['points'])} ({data['count']} болельщиков)\n"
-    text += "\n🏆 Сборная-чемпион по версии WAF Predictor!"
+    # Показываем чемпиона только если турнир завершён
+    finished_matches = sb_get("matches", {"select": "id", "is_finished": "eq.true"})
+    total_matches = sb_get("matches", {"select": "id"})
+    if len(finished_matches) == len(total_matches) and len(total_matches) > 0 and sorted_teams:
+        champion = sorted_teams[0][0]
+        text += f"\n🏆 Сборная-чемпион WAF Predictor: {champion}!"
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"leaderboard:teams:{page-1}"))
