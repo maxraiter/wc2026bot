@@ -1899,7 +1899,8 @@ async def try_fetch_test_result(match):
         teams_in_api = [(f["teams"]["home"]["name"], f["teams"]["away"]["name"]) for f in data.get("response", [])]
         logger.warning(f"⚠️ Матч #{match['match_number']} ({home_name} vs {away_name}) не найден. API вернул {len(teams_in_api)} матчей: {teams_in_api[:5]}")
     except Exception as e:
-        logger.error(f"Ошибка тест-API #{match['match_number']}: {e}")
+        import traceback
+        logger.error(f"Ошибка тест-API #{match['match_number']}: {e}\n{traceback.format_exc()}")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
