@@ -1891,7 +1891,8 @@ async def try_fetch_test_result(match):
                 sb_rpc("calculate_test_match_points", {"p_match_id": match["id"]})
                 logger.info(f"✅ Тест-результат #{match['match_number']}: {home_score}:{away_score}")
                 return
-        logger.warning(f"⚠️ Матч #{match['match_number']} не найден в API (league={league_id})")
+        teams_in_api = [(f["teams"]["home"]["name"], f["teams"]["away"]["name"]) for f in data.get("response", [])]
+        logger.warning(f"⚠️ Матч #{match['match_number']} ({home_name} vs {away_name}) не найден. API вернул {len(teams_in_api)} матчей: {teams_in_api[:5]}")
     except Exception as e:
         logger.error(f"Ошибка тест-API #{match['match_number']}: {e}")
 
