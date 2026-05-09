@@ -14,6 +14,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x]
 API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY")
+FOOTBALL_DATA_KEY = os.environ.get("FOOTBALL_DATA_KEY")
 WC2026_ID = 1
 
 logging.basicConfig(level=logging.INFO)
@@ -884,22 +885,25 @@ async def check_match_results():
 async def try_fetch_result(match):
     try:
         date_str = datetime.fromisoformat(match["kickoff_at"].replace("Z", "+00:00")).strftime("%Y-%m-%d")
-        headers = {"x-apisports-key": API_FOOTBALL_KEY}
-        r = httpx.get("https://v3.football.api-sports.io/fixtures", headers=headers,
-            params={"league": WC2026_ID, "season": 2026, "date": date_str})
+        headers = {"X-Auth-Token": FOOTBALL_DATA_KEY}
+        r = httpx.get(
+            "https://api.football-data.org/v4/matches",
+            headers=headers,
+            params={"competitions": "WC", "dateFrom": date_str, "dateTo": date_str}
+        )
         data = r.json()
         home_name = match["home_team"].split(" ", 1)[-1].strip()
         away_name = match["away_team"].split(" ", 1)[-1].strip()
-        for fixture in data.get("response", []):
-            status = fixture["fixture"]["status"]["short"]
-            if status not in ["FT", "AET", "PEN"]:
+        for fixture in data.get("matches", []):
+            if fixture.get("status") != "FINISHED":
                 continue
-            h = fixture["teams"]["home"]["name"]
-            a = fixture["teams"]["away"]["name"]
+            h = fixture["homeTeam"]["name"]
+            a = fixture["awayTeam"]["name"]
             if (home_name.lower() in h.lower() or h.lower() in home_name.lower()) and \
                (away_name.lower() in a.lower() or a.lower() in away_name.lower()):
-                home_score = fixture["score"]["fulltime"]["home"]
-                away_score = fixture["score"]["fulltime"]["away"]
+                ft = fixture.get("score", {}).get("fullTime", {})
+                home_score = ft.get("home")
+                away_score = ft.get("away")
                 if home_score is None or away_score is None:
                     continue
                 sb_patch("matches", {"id": f"eq.{match['id']}"}, {
