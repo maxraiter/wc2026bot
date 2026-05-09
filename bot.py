@@ -1870,24 +1870,28 @@ async def check_test_match_results():
 async def try_fetch_test_result(match):
     try:
         date_str = datetime.fromisoformat(match["kickoff_at"].replace("Z", "+00:00")).strftime("%Y-%m-%d")
-        headers = {"x-apisports-key": API_FOOTBALL_KEY}
-        # АПЛ = 39, Бундеслига = 78
-        league_id = 39 if match["tournament"] == "EPL" else 78
-        r = httpx.get("https://v3.football.api-sports.io/fixtures", headers=headers,
-            params={"league": league_id, "season": 2026, "date": date_str})
+        competition = "PL" if match["tournament"] == "EPL" else "BL1"
+        headers = {"X-Auth-Token": FOOTBALL_DATA_KEY}
+        r = httpx.get(
+            "https://api.football-data.org/v4/matches",
+            headers=headers,
+            params={"competitions": competition, "dateFrom": date_str, "dateTo": date_str}
+        )
         data = r.json()
         home_name = match.get("api_home_team", match["home_team"])
         away_name = match.get("api_away_team", match["away_team"])
-        for fixture in data.get("response", []):
-            status = fixture["fixture"]["status"]["short"]
-            if status not in ["FT", "AET", "PEN"]:
+        matches_list = data.get("matches", [])
+        logger.info(f"football-data.org вернул {len(matches_list)} матчей для {competition} {date_str}")
+        for fixture in matches_list:
+            if fixture.get("status") != "FINISHED":
                 continue
-            h = fixture["teams"]["home"]["name"]
-            a = fixture["teams"]["away"]["name"]
+            h = fixture["homeTeam"]["name"]
+            a = fixture["awayTeam"]["name"]
             if (home_name.lower() in h.lower() or h.lower() in home_name.lower()) and \
                (away_name.lower() in a.lower() or a.lower() in away_name.lower()):
-                home_score = fixture["score"]["fulltime"]["home"]
-                away_score = fixture["score"]["fulltime"]["away"]
+                ft = fixture.get("score", {}).get("fullTime", {})
+                home_score = ft.get("home")
+                away_score = ft.get("away")
                 if home_score is None or away_score is None:
                     continue
                 sb_patch("test_matches", {"id": f"eq.{match['id']}"}, {
@@ -1896,11 +1900,12 @@ async def try_fetch_test_result(match):
                 sb_rpc("calculate_test_match_points", {"p_match_id": match["id"]})
                 logger.info(f"✅ Тест-результат #{match['match_number']}: {home_score}:{away_score}")
                 return
-        teams_in_api = [(f["teams"]["home"]["name"], f["teams"]["away"]["name"]) for f in data.get("response", [])]
-        logger.warning(f"⚠️ Матч #{match['match_number']} ({home_name} vs {away_name}) не найден. API вернул {len(teams_in_api)} матчей: {teams_in_api[:5]}")
+        teams_in_api = [(f["homeTeam"]["name"], f["awayTeam"]["name"]) for f in matches_list]
+        logger.warning(f"⚠️ Матч #{match['match_number']} ({home_name} vs {away_name}) не найден. Матчи в API: {teams_in_api[:5]}")
     except Exception as e:
         import traceback
         logger.error(f"Ошибка тест-API #{match['match_number']}: {e}\n{traceback.format_exc()}")
+
 
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
