@@ -244,7 +244,6 @@ def score_keyboard(match_id, home_score=None, away_score=None, is_double=False, 
 
 def main_menu_keyboard(user_id):
     buttons = [
-        [InlineKeyboardButton("🧪 Тест-турнир (9 мая)", callback_data="goto:test")],
         [InlineKeyboardButton("🏆 Прогноз на ТОП-4 ЧМ 2026", callback_data="menu:part1")],
         [InlineKeyboardButton("⚽ Прогнозы на матчи", callback_data="menu:matches")],
         [InlineKeyboardButton("👥 Команды", callback_data="menu:teams")],
