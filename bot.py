@@ -1181,10 +1181,7 @@ async def admin_day_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
             finished = "✅ " if m["is_finished"] else ""
             score = f" ({m['home_score']}:{m['away_score']})" if m["is_finished"] else ""
             label = f"{finished}{m['home_team']} — {m['away_team']} {time_str}{score}"
-            row = [InlineKeyboardButton(label, callback_data=f"admin_match_result:{m['id']}")]
-            if m["is_finished"]:
-                row.append(InlineKeyboardButton("🔄", callback_data=f"admin_reset_result:{m['id']}"))
-            buttons.append(row)
+            buttons.append([InlineKeyboardButton(label, callback_data=f"admin_match_result:{m['id']}")])
         else:
             num = f"Матч {m.get('match_number', '')}. " if m["home_team"] == "TBD" else ""
             label = f"{num}{m['home_team']} — {m['away_team']} {time_str}"
