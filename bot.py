@@ -153,7 +153,9 @@ def sb_delete(table, params):
 def sb_rpc(func, data):
     r = httpx.post(f"{SUPABASE_URL}/rest/v1/rpc/{func}", headers=sb_headers(), json=data)
     r.raise_for_status()
-    return r.json()
+    if r.content:
+        return r.json()
+    return None
 
 def get_participant(telegram_id):
     res = sb_get("participants", {"telegram_id": f"eq.{telegram_id}", "select": "*"})
