@@ -179,6 +179,10 @@ def format_time_cet(kickoff_str):
 def is_day_finished(matches):
     if not matches:
         return False
+    # День завершён если все матчи имеют is_finished=True
+    if all(m.get("is_finished") for m in matches):
+        return True
+    # Или прошло 3 часа после последнего матча
     now = datetime.now(timezone.utc)
     last_kickoff = max(datetime.fromisoformat(m["kickoff_at"].replace("Z", "+00:00")) for m in matches)
     return now >= last_kickoff + timedelta(hours=3)
