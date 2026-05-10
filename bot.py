@@ -1245,23 +1245,25 @@ async def handle_admin_save_result(update: Update, context: ContextTypes.DEFAULT
     home = context.user_data.get(f"admin_home_{match_id}")
     away = context.user_data.get(f"admin_away_{match_id}")
     if home is None or away is None:
-        await query.answer("Выбери счёт!", show_alert=True)
+        await query.answer("Выбери счёт для обеих команд!", show_alert=True)
         return
     match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
     sb_patch("matches", {"id": f"eq.{match_id}"}, {
         "home_score": home, "away_score": away, "is_finished": True, "manual_result": True,
     })
     sb_rpc("calculate_match_points", {"p_match_id": match_id})
-    day_id = context.user_data.get("admin_day_id", match["game_day_id"])
-    stage = context.user_data.get("admin_stage", "group1")
-    await query.edit_message_text(
-        f"✅ Результат сохранён: {match['home_team']} {home}:{away} {match['away_team']}\nОчки начислены!",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Вернуться к матчам", callback_data=f"admin_day:{day_id}")],
-            [InlineKeyboardButton("🔄 Обнулить результат", callback_data=f"admin_reset_result:{match_id}")],
-        ])
-    )
-
+    # Берём day_id из матча напрямую (не из context)
+    day_id = match["game_day_id"]
+    try:
+        await query.edit_message_text(
+            f"✅ Результат сохранён!\n{match['home_team']} {home}:{away} {match['away_team']}\nОчки начислены!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("◀️ Вернуться к матчам", callback_data=f"admin_day:{day_id}")],
+                [InlineKeyboardButton("🔄 Обнулить результат", callback_data=f"admin_reset_result:{match_id}")],
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Ошибка после сохранения результата: {e}")
 
 async def admin_match_teams_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
