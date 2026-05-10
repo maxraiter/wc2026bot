@@ -481,7 +481,7 @@ async def show_stage_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tbd = has_tbd(matches) and stage in PLAYOFF_STAGES
         if finished_auto or (finished == total and total > 0):
             status = "✅"
-        elif tbd:
+        elif tbd and stage in PLAYOFF_STAGES:
             status = "❓"
         elif locked:
             status = "🔒"
@@ -579,12 +579,17 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stage_label = STAGE_LABELS.get(stage, "")
     finished_auto = is_day_finished(matches)
     tbd = has_tbd(matches) and stage in PLAYOFF_STAGES
+
     text = f"📅 День {day['day_number']} — {date_str}\n{stage_label}\n"
+
+    # Заголовок X2
     day_num = day["day_number"]
     if day_num in {31, 32, 33, 34}:
         text += "ℹ️ На этой стадии бонус X2 не действует\n"
     elif day_num in {18, 28, 29}:
-        text += "ℹ️ В этот игровой день состоится только 1 матч, бонус X2 не действует\n"
+        text += "ℹ️ В этот игровой день 1 матч, бонус X2 не действует\n"
+
+    # День завершён — показываем текстом
     if finished_auto:
         text += "✅ День завершён\n\n"
         day_total = 0
@@ -602,33 +607,55 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     pts_str = f"+{format_points(pts)}"
                 result_icon = "✅" if pts > 0 else "❌"
-                text += f"{m['home_team']} {real} {m['away_team']}\nТвой прогноз: {pred_score} {result_icon} {pts_str}\n\n"
+                text += f"{m['home_team']} {real} {m['away_team']}\nПрогноз: {pred_score} {result_icon} {pts_str}\n\n"
             else:
                 text += f"{m['home_team']} {real} {m['away_team']}\nПрогноза не было\n\n"
-        text += f"⚡️ Итого за день: {format_points(day_total)}"
+        text += f"⚡️ Итого: {format_points(day_total)}"
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"stage:{stage}")]]))
         return
-    if tbd:
+
+    # День заблокирован или открыт — матчи кнопками
+    if tbd and stage in PLAYOFF_STAGES:
         text += "❓ Команды не определены\n\n"
     elif locked:
-        text += "🔒 Прогнозы закрыты\n\n"
+        text += "🔒 Матчи идут, прогнозы заблокированы\n\n"
     else:
         text += "Начало матчей по Центральноевропейскому времени (UTC+2)\n📝 Открыт для прогнозов\n\n"
+
     buttons = []
     for m in matches:
         pred = preds.get(m["id"])
         time_str = format_time_cet(m["kickoff_at"])
-        if pred:
+
+        if m["is_finished"]:
+            # Матч уже завершён — показываем результат и очки в кнопке
+            real = f"{m['home_score']}:{m['away_score']}"
+            if pred:
+                pts = pred["points_earned"]
+                pred_score = f"{pred['home_score_pred']}:{pred['away_score_pred']}"
+                result_icon = "✅" if pts > 0 else "❌"
+                label = f"✅ {m['home_team']} {real} {m['away_team']} → {pred_score} {result_icon} +{format_points(pts)}"
+            else:
+                label = f"✅ {m['home_team']} {real} {m['away_team']} (прогноза не было)"
+            buttons.append([InlineKeyboardButton(label, callback_data="noop")])
+        elif pred:
             score = f"{pred['home_score_pred']}:{pred['away_score_pred']}"
             double_mark = " 🔥×2" if pred["is_double"] else ""
-            label = f"📝 {m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
+            lock = "🔒 " if locked else "📝 "
+            label = f"{lock}{m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
+            if not locked and not tbd:
+                buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
+            else:
+                buttons.append([InlineKeyboardButton(label, callback_data="noop")])
         else:
             num = f"Матч {m.get('match_number', '')}. " if m["home_team"] == "TBD" else ""
-            label = f"{num}{m['home_team']} — : — {m['away_team']} {time_str}"
-        if not locked and not m["is_finished"] and not tbd:
-            buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
-        else:
-            buttons.append([InlineKeyboardButton(label, callback_data="noop")])
+            lock = "🔒 " if locked else ""
+            label = f"{lock}{num}{m['home_team']} — : — {m['away_team']} {time_str}"
+            if not locked and not tbd:
+                buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
+            else:
+                buttons.append([InlineKeyboardButton(label, callback_data="noop")])
+
     buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"stage:{stage}")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
