@@ -241,6 +241,7 @@ def main_menu_keyboard(user_id):
         [InlineKeyboardButton("🧪 Тест-турнир (9 мая)", callback_data="goto:test")],
         [InlineKeyboardButton("🏆 Прогноз на ТОП-4 ЧМ 2026", callback_data="menu:part1")],
         [InlineKeyboardButton("⚽ Прогнозы на матчи", callback_data="menu:matches")],
+        [InlineKeyboardButton("👥 Команды", callback_data="menu:teams")],
         [InlineKeyboardButton("📊 Таблица лидеров", callback_data="menu:leaderboard:0")],
         [InlineKeyboardButton("📋 Мои прогнозы", callback_data="menu:my_predictions")],
     ]
@@ -310,6 +311,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "leaderboard":
         page = int(parts[2]) if len(parts) > 2 else 0
         await show_leaderboard(query, context, page)
+    elif action == "teams":
+        await show_teams_menu(query, context)
     elif action == "my_predictions":
         await show_my_predictions_menu(query, context)
     elif action == "admin":
@@ -539,7 +542,8 @@ async def show_direct_stage_matches(query, context, stage):
             double_mark = " 🔥×2" if pred["is_double"] and not no_double else ""
             label = f"📝 {m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
         else:
-            label = f"{m['home_team']} — : — {m['away_team']} {time_str}"
+            num = f"Матч {m.get('match_number', '')}. " if m["home_team"] == "TBD" else ""
+            label = f"{num}{m['home_team']} — : — {m['away_team']} {time_str}"
         if not locked and not m["is_finished"] and not tbd:
             buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
         else:
@@ -570,6 +574,11 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finished_auto = is_day_finished(matches)
     tbd = has_tbd(matches) and stage in PLAYOFF_STAGES
     text = f"📅 День {day['day_number']} — {date_str}\n{stage_label}\n"
+    day_num = day["day_number"]
+    if day_num in {31, 32, 33, 34}:
+        text += "ℹ️ На этой стадии бонус X2 не действует\n"
+    elif day_num in {18, 28, 29}:
+        text += "ℹ️ В этот игровой день состоится только 1 матч, бонус X2 не действует\n"
     if finished_auto:
         text += "✅ День завершён\n\n"
         day_total = 0
@@ -608,7 +617,8 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
             double_mark = " 🔥×2" if pred["is_double"] else ""
             label = f"📝 {m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
         else:
-            label = f"{m['home_team']} — : — {m['away_team']} {time_str}"
+            num = f"Матч {m.get('match_number', '')}. " if m["home_team"] == "TBD" else ""
+            label = f"{num}{m['home_team']} — : — {m['away_team']} {time_str}"
         if not locked and not m["is_finished"] and not tbd:
             buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
         else:
@@ -833,7 +843,7 @@ async def show_leaderboard(query, context, page=0):
     buttons = []
     if nav:
         buttons.append(nav)
-    buttons.append([InlineKeyboardButton("📊 Таблица сборных", callback_data="leaderboard:teams:0")])
+
     buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -894,9 +904,44 @@ async def fetch_and_update_results(app):
         try:
             await check_match_results()
             await check_test_match_results()
+            await send_deadline_reminders(app)
         except Exception as e:
             logger.error(f"Ошибка при получении результатов: {e}")
         await asyncio.sleep(15 * 60)
+
+async def send_deadline_reminders(app):
+    """Отправляет напоминания за час до дедлайна"""
+    now = datetime.now(timezone.utc)
+    days = sb_get("game_days", {"select": "*"})
+    for day in days:
+        deadline = datetime.fromisoformat(day["deadline"].replace("Z", "+00:00"))
+        diff = (deadline - now).total_seconds()
+        # За час до дедлайна (±7 минут)
+        if 3300 <= diff <= 3720:
+            day_num = day["day_number"]
+            stage = DAY_STAGE.get(day_num, "group1")
+            if stage == "final":
+                event = "финал ЧМ-2026"
+            elif stage == "3rd":
+                event = "матч за 3-е место ЧМ-2026"
+            elif stage == "sf":
+                event = "сегодняшний полуфинал ЧМ-2026"
+            else:
+                event = "сегодняшний игровой день ЧМ-2026"
+            participants = sb_get("participants", {"select": "telegram_id,name", "payment_status": "eq.paid"})
+            for p in participants:
+                if not p.get("telegram_id"):
+                    continue
+                try:
+                    await app.bot.send_message(
+                        chat_id=int(p["telegram_id"]),
+                        text=f"👋 Привет, {p['name']}!\n\n⏰ Остался час до закрытия прогнозов на {event}. Проверь, что ты сделал все прогнозы!",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("⚽ Прогнозы на матчи", callback_data="menu:matches")
+                        ]])
+                    )
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить уведомление {p['telegram_id']}: {e}")
 
 async def check_match_results():
     now = datetime.now(timezone.utc)
@@ -1312,6 +1357,336 @@ async def post_init(app):
 # ============================================
 # ТЕСТ-ТУРНИР
 # ============================================
+
+# ============================================
+# КОМАНДНЫЙ ЗАЧЁТ
+# ============================================
+
+# Стадии после которых командный зачёт закрыт (sf и выше не считаются)
+TEAM_STAGES_COUNTED = {"group1", "group2", "group3", "r32", "r16", "qf"}
+# Дедлайн изменений — начало 2-го тура (день 8)
+def is_team_changes_open():
+    days = sb_get("game_days", {"day_number": "eq.8", "select": "deadline"})
+    if not days:
+        return True
+    deadline = datetime.fromisoformat(days[0]["deadline"].replace("Z", "+00:00"))
+    return datetime.now(timezone.utc) < deadline
+
+def get_participant_team(participant_id):
+    """Возвращает команду участника или None"""
+    member = sb_get("team_members", {"participant_id": f"eq.{participant_id}", "select": "team_id"})
+    if not member:
+        return None
+    team = sb_get("teams", {"id": f"eq.{member[0]['team_id']}", "select": "*"})
+    return team[0] if team else None
+
+def get_team_members(team_id):
+    members = sb_get("team_members", {"team_id": f"eq.{team_id}", "select": "participant_id,participants(name,telegram_id)"})
+    return members
+
+def get_team_points(team_id):
+    """Суммирует очки команды только за матчи до полуфинала включительно"""
+    members = get_team_members(team_id)
+    total = 0
+    for m in members:
+        pid = m["participant_id"]
+        # Получаем все прогнозы участника на матчи в считаемых стадиях
+        preds = sb_get("predictions", {"participant_id": f"eq.{pid}", "select": "points_earned,match_id"})
+        for pred in preds:
+            match = sb_get("matches", {"id": f"eq.{pred['match_id']}", "select": "game_day_id"})
+            if not match:
+                continue
+            day = sb_get("game_days", {"id": f"eq.{match[0]['game_day_id']}", "select": "day_number"})
+            if not day:
+                continue
+            stage = DAY_STAGE.get(day[0]["day_number"], "group1")
+            if stage in TEAM_STAGES_COUNTED:
+                total += pred["points_earned"]
+    return total
+
+async def show_teams_menu(query, context):
+    user = query.from_user
+    participant = get_participant(str(user.id))
+    team = get_participant_team(participant["id"])
+    changes_open = is_team_changes_open()
+
+    if team:
+        await show_my_team(query, context, team, participant, changes_open)
+    else:
+        if not changes_open:
+            await query.edit_message_text(
+                "👥 Команды\n\nВы не состоите ни в одной команде.\nЗапись в команды закрыта.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
+            )
+        else:
+            await query.edit_message_text(
+                "👥 Команды\n\nОбъединяйтесь в команды до конца 1 тура!\nМаксимум 3 человека в команде.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ Создать команду", callback_data="team:create")],
+                    [InlineKeyboardButton("🔑 Вступить в команду", callback_data="team:join")],
+                    [InlineKeyboardButton("📊 Таблица команд", callback_data="team:leaderboard:0")],
+                    [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
+                ])
+            )
+
+async def show_my_team(query, context, team, participant, changes_open):
+    members = get_team_members(team["id"])
+    is_captain = team["captain_id"] == participant["id"]
+    enough_members = len(members) >= 2
+
+    text = f"👥 Моя команда: {team['name']}\n\n"
+
+    if not enough_members:
+        text += "⚠️ В вашей команде пока недостаточно участников, пригласите их!\n\n"
+
+    for i, m in enumerate(members, 1):
+        name = m["participants"]["name"]
+        crown = " 👑" if team["captain_id"] == m["participant_id"] else ""
+        text += f"{i}. {name}{crown}\n"
+
+    if enough_members:
+        pts = get_team_points(team["id"])
+        text += f"\n⚡️ Очков в командном зачёте: {format_points(pts)}"
+
+    buttons = []
+    if changes_open:
+        if is_captain:
+            buttons.append([InlineKeyboardButton("✏️ Сменить название", callback_data="team:rename")])
+            buttons.append([InlineKeyboardButton("🔑 Показать пароль", callback_data="team:show_password")])
+            if len(members) > 1:
+                buttons.append([InlineKeyboardButton("👤 Удалить участника", callback_data="team:kick")])
+            else:
+                buttons.append([InlineKeyboardButton("🗑 Удалить команду", callback_data="team:delete")])
+        else:
+            buttons.append([InlineKeyboardButton("🚪 Покинуть команду", callback_data="team:leave")])
+
+    buttons.append([InlineKeyboardButton("📊 Таблица команд", callback_data="team:leaderboard:0")])
+    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+(
+    TEAM_CREATE_NAME, TEAM_CREATE_PASSWORD,
+    TEAM_JOIN_PASSWORD,
+    TEAM_RENAME,
+) = range(200, 204)
+
+async def team_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+    participant = get_participant(str(user.id))
+    action = query.data.split(":")[1]
+
+    if action == "create":
+        await query.edit_message_text(
+            "➕ Создание команды\n\nПридумай название команды:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")]])
+        )
+        return TEAM_CREATE_NAME
+
+    elif action == "join":
+        await query.edit_message_text(
+            "🔑 Вступление в команду\n\nВведи пароль команды:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")]])
+        )
+        return TEAM_JOIN_PASSWORD
+
+    elif action == "show_password":
+        team = get_participant_team(participant["id"])
+        if team and team["captain_id"] == participant["id"]:
+            await query.edit_message_text(
+                f"🔑 Пароль команды «{team['name']}»:\n\n`{team['password']}`\n\nПоделись этим паролем с теми кого хочешь пригласить.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")]])
+            )
+
+    elif action == "rename":
+        await query.edit_message_text(
+            "✏️ Введи новое название команды:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")]])
+        )
+        return TEAM_RENAME
+
+    elif action == "delete":
+        team = get_participant_team(participant["id"])
+        if team and team["captain_id"] == participant["id"]:
+            members = get_team_members(team["id"])
+            if len(members) <= 1:
+                sb_delete("teams", {"id": f"eq.{team['id']}"})
+                await query.edit_message_text(
+                    "✅ Команда удалена.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
+                )
+
+    elif action == "leave":
+        team = get_participant_team(participant["id"])
+        if team and team["captain_id"] != participant["id"]:
+            sb_delete("team_members", {"participant_id": f"eq.{participant['id']}"})
+            await query.edit_message_text(
+                "✅ Вы покинули команду.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("👥 К командам", callback_data="menu:teams")],
+                    [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
+                ])
+            )
+
+    elif action == "kick":
+        team = get_participant_team(participant["id"])
+        if team and team["captain_id"] == participant["id"]:
+            members = get_team_members(team["id"])
+            buttons = []
+            for m in members:
+                if m["participant_id"] == participant["id"]:
+                    continue
+                name = m["participants"]["name"]
+                buttons.append([InlineKeyboardButton(f"🗑 {name}", callback_data=f"team:kick_confirm:{m['participant_id']}")])
+            buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")])
+            await query.edit_message_text("Кого удалить из команды?", reply_markup=InlineKeyboardMarkup(buttons))
+
+    elif action == "kick_confirm":
+        kick_id = query.data.split(":")[2]
+        team = get_participant_team(participant["id"])
+        if team and team["captain_id"] == participant["id"]:
+            sb_delete("team_members", {"participant_id": f"eq.{kick_id}"})
+            await query.edit_message_text(
+                "✅ Участник удалён из команды.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ К команде", callback_data="menu:teams")]])
+            )
+
+    elif action == "leaderboard":
+        page = int(query.data.split(":")[2]) if len(query.data.split(":")) > 2 else 0
+        await show_teams_leaderboard(query, context, page)
+
+async def team_create_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text.strip()
+    if len(name) > 30:
+        await update.message.reply_text("Название слишком длинное (макс. 30 символов). Попробуй ещё раз:")
+        return TEAM_CREATE_NAME
+    context.user_data["team_name"] = name
+    await update.message.reply_text(
+        f"Название: «{name}»\n\nТеперь придумай пароль для команды (цифры и буквы, макс. 20 символов).\nЭтот пароль ты будешь давать друзьям чтобы они вступили:"
+    )
+    return TEAM_CREATE_PASSWORD
+
+async def team_create_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    password = update.message.text.strip()
+    if len(password) > 20:
+        await update.message.reply_text("Пароль слишком длинный (макс. 20 символов). Попробуй ещё раз:")
+        return TEAM_CREATE_PASSWORD
+    user = update.effective_user
+    participant = get_participant(str(user.id))
+    # Проверяем что пароль уникален
+    existing = sb_get("teams", {"password": f"eq.{password}", "select": "id"})
+    if existing:
+        await update.message.reply_text("Этот пароль уже занят. Придумай другой:")
+        return TEAM_CREATE_PASSWORD
+    # Проверяем лимит команды
+    existing_team = get_participant_team(participant["id"])
+    if existing_team:
+        await update.message.reply_text("Ты уже состоишь в команде.", reply_markup=main_menu_keyboard(user.id))
+        return ConversationHandler.END
+    name = context.user_data["team_name"]
+    team = sb_post("teams", {
+        "name": name,
+        "password": password,
+        "captain_id": participant["id"],
+    })
+    team_id = team[0]["id"]
+    sb_post("team_members", {"team_id": team_id, "participant_id": participant["id"]})
+    await update.message.reply_text(
+        f"✅ Команда «{name}» создана!\n\n🔑 Пароль: `{password}`\n\nПоделись этим паролем с друзьями чтобы они вступили в команду.",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 Моя команда", callback_data="menu:teams")],
+            [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
+        ])
+    )
+    return ConversationHandler.END
+
+async def team_join_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    password = update.message.text.strip()
+    user = update.effective_user
+    participant = get_participant(str(user.id))
+    # Ищем команду
+    team = sb_get("teams", {"password": f"eq.{password}", "select": "*"})
+    if not team:
+        await update.message.reply_text("Команда с таким паролем не найдена. Попробуй ещё раз:")
+        return TEAM_JOIN_PASSWORD
+    team = team[0]
+    # Проверяем что не в команде
+    existing = get_participant_team(participant["id"])
+    if existing:
+        await update.message.reply_text("Ты уже состоишь в команде.", reply_markup=main_menu_keyboard(user.id))
+        return ConversationHandler.END
+    # Проверяем лимит
+    members = get_team_members(team["id"])
+    if len(members) >= 3:
+        await update.message.reply_text("В этой команде уже 3 участника — максимум. Попробуй другой пароль:")
+        return TEAM_JOIN_PASSWORD
+    sb_post("team_members", {"team_id": team["id"], "participant_id": participant["id"]})
+    await update.message.reply_text(
+        f"✅ Ты вступил в команду «{team['name']}»!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 Моя команда", callback_data="menu:teams")],
+            [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
+        ])
+    )
+    return ConversationHandler.END
+
+async def team_rename(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text.strip()
+    if len(name) > 30:
+        await update.message.reply_text("Название слишком длинное. Попробуй ещё раз:")
+        return TEAM_RENAME
+    user = update.effective_user
+    participant = get_participant(str(user.id))
+    team = get_participant_team(participant["id"])
+    if team and team["captain_id"] == participant["id"]:
+        sb_patch("teams", {"id": f"eq.{team['id']}"}, {"name": name})
+        await update.message.reply_text(
+            f"✅ Название команды изменено на «{name}».",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👥 Моя команда", callback_data="menu:teams")]])
+        )
+    return ConversationHandler.END
+
+async def show_teams_leaderboard(query, context, page=0):
+    per_page = 10
+    offset = page * per_page
+    # Получаем все команды с 2+ участниками
+    all_teams = sb_get("teams", {"select": "*"})
+    teams_with_pts = []
+    for team in all_teams:
+        members = get_team_members(team["id"])
+        if len(members) < 2:
+            continue
+        pts = get_team_points(team["id"])
+        teams_with_pts.append((team["name"], pts, len(members)))
+    teams_with_pts.sort(key=lambda x: x[1], reverse=True)
+    total = len(teams_with_pts)
+    chunk = teams_with_pts[offset:offset + per_page]
+    if not chunk:
+        await query.edit_message_text(
+            "📊 Таблица команд\n\nПока нет команд с 2+ участниками.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")]])
+        )
+        return
+    start_num = offset + 1
+    end_num = offset + len(chunk)
+    text = f"📊 Таблица команд ({start_num}-{end_num} из {total})\n\n"
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    for i, (name, pts, count) in enumerate(chunk, start_num):
+        medal = medals.get(i, f"{i}.")
+        text += f"{medal} {name} — {format_points(pts)} ({format_fans(count)})\n"
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"team:leaderboard:{page-1}"))
+    if end_num < total:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"team:leaderboard:{page+1}"))
+    buttons = []
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 TEST_TEAMS_EPL = [
     "Liverpool", "Chelsea", "Brighton", "Wolves",
@@ -2005,6 +2380,34 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+
+    # Командный зачёт
+    team_create_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(team_callback, pattern="^team:create$")],
+        states={
+            TEAM_CREATE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, team_create_name)],
+            TEAM_CREATE_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, team_create_password)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    team_join_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(team_callback, pattern="^team:join$")],
+        states={
+            TEAM_JOIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, team_join_password)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    team_rename_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(team_callback, pattern="^team:rename$")],
+        states={
+            TEAM_RENAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, team_rename)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    app.add_handler(team_create_conv)
+    app.add_handler(team_join_conv)
+    app.add_handler(team_rename_conv)
+    app.add_handler(CallbackQueryHandler(team_callback, pattern="^team:"))
     app.add_handler(part1_conv)
     app.add_handler(admin_add_conv)
     app.add_handler(admin_part1_conv)
@@ -2044,7 +2447,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_admin_score_home, pattern="^ash:"))
     app.add_handler(CallbackQueryHandler(handle_admin_score_away, pattern="^asa:"))
     app.add_handler(CallbackQueryHandler(handle_admin_save_result, pattern="^asave:"))
-    app.add_handler(CallbackQueryHandler(show_teams_leaderboard, pattern="^leaderboard:teams:"))
+
     app.add_handler(CallbackQueryHandler(show_my_predictions_stage, pattern="^mypred:"))
     app.add_handler(CallbackQueryHandler(admin_delete_user, pattern="^admin_delete:"))
     app.add_handler(CallbackQueryHandler(back_handler, pattern="^back:"))
