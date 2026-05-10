@@ -1245,6 +1245,7 @@ async def handle_admin_score_away(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text(text, reply_markup=score_keyboard(match_id, home, int(digit), admin_mode=True))
 
 async def handle_admin_save_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"ADMIN SAVE RESULT called: {update.callback_query.data}")
     query = update.callback_query
     match_id = query.data.split(":")[1]
     home = context.user_data.get(f"admin_home_{match_id}")
