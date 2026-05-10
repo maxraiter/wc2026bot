@@ -1253,23 +1253,15 @@ async def handle_admin_save_result(update: Update, context: ContextTypes.DEFAULT
     })
     sb_rpc("calculate_match_points", {"p_match_id": match_id})
     day_id = context.user_data.get("admin_day_id", match["game_day_id"])
-    matches = sb_get("matches", {"game_day_id": f"eq.{day_id}", "select": "*", "order": "kickoff_at"})
-    buttons = []
-    for m in matches:
-        time_str = format_time_cet(m["kickoff_at"])
-        finished = "✅ " if m["is_finished"] else ""
-        score = f" ({m['home_score']}:{m['away_score']})" if m["is_finished"] else ""
-        label = f"{finished}{m['home_team']} — {m['away_team']} {time_str}{score}"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"admin_match_result:{m['id']}")])
     stage = context.user_data.get("admin_stage", "group1")
-    buttons.append([InlineKeyboardButton("◀️ К стадиям", callback_data=f"admin_stage:{stage}")])
-    day_id = context.user_data.get("admin_day_id", match["game_day_id"])
-    stage = context.user_data.get("admin_stage", "group1")
-    buttons_with_back = buttons + [[InlineKeyboardButton("◀️ К этапу", callback_data=f"admin_stage:{stage}")]]
     await query.edit_message_text(
-        f"✅ {match['home_team']} {home}:{away} {match['away_team']}\nОчки пересчитаны!\n\nВыбери следующий матч:",
-        reply_markup=InlineKeyboardMarkup(buttons_with_back)
+        f"✅ Результат сохранён: {match['home_team']} {home}:{away} {match['away_team']}\nОчки начислены!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Вернуться к матчам", callback_data=f"admin_day:{day_id}")],
+            [InlineKeyboardButton("🔄 Обнулить результат", callback_data=f"admin_reset_result:{match_id}")],
+        ])
     )
+
 
 async def admin_match_teams_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1355,6 +1347,56 @@ async def admin_add_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard(update.effective_user.id))
     return ConversationHandler.END
+
+async def handle_admin_reset_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        return
+    match_id = query.data.split(":")[1]
+    match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
+    preds = sb_get("predictions", {"match_id": f"eq.{match_id}", "select": "*"})
+    for pred in preds:
+        if pred["points_earned"] > 0:
+            lb = sb_get("leaderboard", {"participant_id": f"eq.{pred['participant_id']}", "select": "part2_points,total_points"})
+            if lb:
+                new_part2 = max(0, lb[0]["part2_points"] - pred["points_earned"])
+                new_total = max(0, lb[0]["total_points"] - pred["points_earned"])
+                sb_patch("leaderboard", {"participant_id": f"eq.{pred['participant_id']}"}, {
+                    "part2_points": new_part2, "total_points": new_total
+                })
+        sb_patch("predictions", {"id": f"eq.{pred['id']}"}, {
+            "points_earned": 0, "is_calculated": False
+        })
+    sb_patch("matches", {"id": f"eq.{match_id}"}, {
+        "home_score": None, "away_score": None,
+        "is_finished": False, "manual_result": False
+    })
+    day_id = context.user_data.get("admin_day_id", match["game_day_id"])
+    await query.edit_message_text(
+        f"🔄 Результат отменён, очки вычтены.\n{match['home_team']} vs {match['away_team']}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Вернуться к матчам", callback_data=f"admin_day:{day_id}")],
+        ])
+    )
+
+async def handle_admin_reset_teams(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        return
+    match_id = query.data.split(":")[1]
+    match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
+    sb_patch("matches", {"id": f"eq.{match_id}"}, {"home_team": "TBD", "away_team": "TBD"})
+    day_id = match["game_day_id"]
+    stage = context.user_data.get("admin_stage", "r32")
+    await query.edit_message_text(
+        f"🔄 Команды матча #{match.get('match_number', '')} обнулены!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Вернуться к матчам", callback_data=f"admin_day:{day_id}")],
+        ])
+    )
+
 
 async def post_init(app):
     asyncio.create_task(fetch_and_update_results(app))
@@ -2449,6 +2491,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_day_selected, pattern="^admin_day:"))
     app.add_handler(CallbackQueryHandler(admin_match_result_selected, pattern="^admin_match_result:"))
     app.add_handler(CallbackQueryHandler(handle_admin_score_home, pattern="^ash:"))
+    app.add_handler(CallbackQueryHandler(handle_admin_reset_result, pattern="^admin_reset_result:"))
+    app.add_handler(CallbackQueryHandler(handle_admin_reset_teams, pattern="^admin_reset_teams:"))
     app.add_handler(CallbackQueryHandler(handle_admin_score_away, pattern="^asa:"))
     app.add_handler(CallbackQueryHandler(handle_admin_save_result, pattern="^asave:"))
 
