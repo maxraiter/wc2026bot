@@ -72,7 +72,7 @@ STAGE_LABELS = {
     "group2": "2 тур группового этапа",
     "group3": "3 тур группового этапа",
     "r32": "1/16 финала", "r16": "1/8 финала",
-    "qf": "1/4 финала", "sf": "Полуфинал",
+    "qf": "1/4 финала", "sf": "Полуфиналы",
     "3rd": "Матч за 3-е место", "final": "Финал",
 }
 STAGE_SHORT = {
@@ -97,7 +97,7 @@ DAY_STAGE = {
     34: "final",
 }
 STAGES_ORDER = ["group1", "group2", "group3", "r32", "r16", "qf", "sf", "3rd", "final"]
-DIRECT_STAGES = {"sf", "3rd", "final"}
+DIRECT_STAGES = {"3rd", "final"}
 NO_DOUBLE_STAGES = {"qf", "sf", "3rd", "final"}
 PLAYOFF_STAGES = {"r32", "r16", "qf", "sf", "3rd", "final"}
 
@@ -635,8 +635,6 @@ async def show_prediction_screen(query, context, match_id, home_score=None, away
     text = (
         f"⚽ {match['home_team']} vs {match['away_team']}\n"
         f"🕐 {time_str} (UTC+2)\n\n"
-        f"{match['home_team']}:\n"
-        f"{match['away_team']}:\n\n"
         f"Счёт: {h} : {a}{double_text}"
     )
     await query.edit_message_text(text, reply_markup=score_keyboard(match_id, home_score, away_score, is_double, no_double))
@@ -1181,10 +1179,17 @@ async def admin_day_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
             finished = "✅ " if m["is_finished"] else ""
             score = f" ({m['home_score']}:{m['away_score']})" if m["is_finished"] else ""
             label = f"{finished}{m['home_team']} — {m['away_team']} {time_str}{score}"
-            buttons.append([InlineKeyboardButton(label, callback_data=f"admin_match_result:{m['id']}")])
+            row = [InlineKeyboardButton(label, callback_data=f"admin_match_result:{m['id']}")]
+            if m["is_finished"]:
+                row.append(InlineKeyboardButton("🔄", callback_data=f"admin_reset_result:{m['id']}"))
+            buttons.append(row)
         else:
-            label = f"{m['home_team']} — {m['away_team']} {time_str}"
-            buttons.append([InlineKeyboardButton(label, callback_data=f"admin_match_teams:{m['id']}")])
+            num = f"Матч {m.get('match_number', '')}. " if m["home_team"] == "TBD" else ""
+            label = f"{num}{m['home_team']} — {m['away_team']} {time_str}"
+            row = [InlineKeyboardButton(label, callback_data=f"admin_match_teams:{m['id']}")]
+            if m["home_team"] != "TBD":
+                row.append(InlineKeyboardButton("🔄", callback_data=f"admin_reset_teams:{m['id']}"))
+            buttons.append(row)
     stage = context.user_data.get("admin_stage", "group1")
     buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_stage:{stage}")])
     title = "⚽ Выбери матч:" if mode == "result" else "🏆 Выбери матч:"
@@ -1202,7 +1207,7 @@ async def admin_match_result_selected(update: Update, context: ContextTypes.DEFA
     a = num_emoji(match["away_score"]) if match.get("away_score") is not None else "—"
     time_str = format_time_cet(match["kickoff_at"])
     text = (f"⚽ {match['home_team']} vs {match['away_team']}\n🕐 {time_str} (UTC+2)\n\n"
-            f"{match['home_team']}:\n{match['away_team']}:\n\nСчёт: {h} : {a}")
+            f"Счёт: {h} : {a}")
     await query.edit_message_text(text, reply_markup=score_keyboard(match_id, match.get("home_score"), match.get("away_score"), admin_mode=True))
 
 async def handle_admin_score_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1216,7 +1221,7 @@ async def handle_admin_score_home(update: Update, context: ContextTypes.DEFAULT_
     a = num_emoji(away) if away is not None else "—"
     time_str = format_time_cet(match["kickoff_at"])
     text = (f"⚽ {match['home_team']} vs {match['away_team']}\n🕐 {time_str} (UTC+2)\n\n"
-            f"{match['home_team']}:\n{match['away_team']}:\n\nСчёт: {h} : {a}")
+            f"Счёт: {h} : {a}")
     await query.edit_message_text(text, reply_markup=score_keyboard(match_id, int(digit), away, admin_mode=True))
 
 async def handle_admin_score_away(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1230,7 +1235,7 @@ async def handle_admin_score_away(update: Update, context: ContextTypes.DEFAULT_
     a = num_emoji(int(digit))
     time_str = format_time_cet(match["kickoff_at"])
     text = (f"⚽ {match['home_team']} vs {match['away_team']}\n🕐 {time_str} (UTC+2)\n\n"
-            f"{match['home_team']}:\n{match['away_team']}:\n\nСчёт: {h} : {a}")
+            f"Счёт: {h} : {a}")
     await query.edit_message_text(text, reply_markup=score_keyboard(match_id, home, int(digit), admin_mode=True))
 
 async def handle_admin_save_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2079,7 +2084,6 @@ async def test_show_pred_screen(query, context, match_id):
     text = (
         f"{trn_label}\n⚽ {match['home_team']} vs {match['away_team']}\n"
         f"🕐 {time_str} (UTC+2)\n\n"
-        f"{match['home_team']}:\n{match['away_team']}:\n\n"
         f"Счёт: {h} : {a}{double_text}"
     )
     await query.edit_message_text(text, reply_markup=test_score_keyboard(match_id, home_score, away_score, is_double))
