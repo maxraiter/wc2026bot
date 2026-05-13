@@ -1518,12 +1518,15 @@ async def handle_stripe_webhook(request):
         # Отправляем сообщение в Telegram если есть ID
         if telegram_id:
             try:
-                from telegram import Bot
-                bot = Bot(token=BOT_TOKEN)
-                await bot.send_message(
-                    chat_id=int(telegram_id),
-                    text=f"🎉 Привет, {name}!\n\nТвоя оплата получена — добро пожаловать в WAF Predictor!\n\nНапиши /start чтобы начать делать прогнозы на ЧМ 2026! 🏆"
+                import httpx as _httpx
+                _httpx.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": int(telegram_id),
+                        "text": f"🎉 Привет, {name}!\n\nТвоя оплата получена — добро пожаловать в WAF Predictor!\n\nНапиши /start чтобы начать делать прогнозы на ЧМ 2026! 🏆"
+                    }
                 )
+                logger.info(f"✅ Сообщение отправлено {telegram_id}")
             except Exception as e:
                 logger.warning(f"Не удалось отправить сообщение {telegram_id}: {e}")
 
