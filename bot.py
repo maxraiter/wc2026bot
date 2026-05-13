@@ -1478,9 +1478,16 @@ async def handle_stripe_webhook(request):
         # Telegram ID из custom fields
         telegram_id = None
         custom_fields = session.get("custom_fields", [])
+        logger.info(f"Custom fields from Stripe: {custom_fields}")
         for field in custom_fields:
-            if field.get("key") == "telegramid":
-                telegram_id = field.get("text", {}).get("value", "").strip()
+            logger.info(f"Field key: {field.get('key')}, value: {field}")
+            # Пробуем разные варианты ключа
+            key = field.get("key", "").lower()
+            if "telegram" in key or key in ["telegramid", "telegram_id", "tgid"]:
+                # Поле может быть text или numeric
+                val = field.get("text", {}).get("value") or field.get("numeric", {}).get("value")
+                if val:
+                    telegram_id = str(val).strip()
                 break
 
         if not name:
