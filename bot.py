@@ -2,7 +2,10 @@ import os
 import logging
 import httpx
 import asyncio
+import hmac
+import hashlib
 from datetime import datetime, timezone, timedelta
+from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -14,6 +17,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "").split(",") if x]
 API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+WEBHOOK_PORT = int(os.environ.get("PORT", 8080))
 FOOTBALL_DATA_KEY = os.environ.get("FOOTBALL_DATA_KEY")
 WC2026_ID = 1
 
@@ -1432,8 +1437,101 @@ async def handle_admin_reset_teams(update: Update, context: ContextTypes.DEFAULT
     )
 
 
+async def handle_stripe_webhook(request):
+    """Обрабатывает webhook от Stripe"""
+    payload = await request.read()
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    # Верифицируем подпись
+    try:
+        timestamp = None
+        sig = None
+        for part in sig_header.split(","):
+            if part.startswith("t="):
+                timestamp = part[2:]
+            elif part.startswith("v1="):
+                sig = part[3:]
+
+        signed_payload = f"{timestamp}.{payload.decode('utf-8')}"
+        expected_sig = hmac.new(
+            STRIPE_WEBHOOK_SECRET.encode(),
+            signed_payload.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected_sig, sig or ""):
+            logger.warning("Stripe webhook: неверная подпись")
+            return web.Response(status=400, text="Invalid signature")
+    except Exception as e:
+        logger.error(f"Stripe webhook signature error: {e}")
+        return web.Response(status=400, text="Signature error")
+
+    import json
+    event = json.loads(payload)
+    logger.info(f"Stripe webhook: {event.get('type')}")
+
+    if event.get("type") == "checkout.session.completed":
+        session = event["data"]["object"]
+        # Получаем данные из формы
+        customer_details = session.get("customer_details", {})
+        name = customer_details.get("name", "")
+        # Telegram ID из custom fields
+        telegram_id = None
+        custom_fields = session.get("custom_fields", [])
+        for field in custom_fields:
+            if field.get("key") == "telegramid":
+                telegram_id = field.get("text", {}).get("value", "").strip()
+                break
+
+        if not name:
+            logger.warning("Stripe webhook: нет имени участника")
+            return web.Response(status=200, text="OK")
+
+        # Проверяем не зарегистрирован ли уже
+        existing = sb_get("participants", {"email": f"eq.{customer_details.get('email', '')}", "select": "id"})
+        if existing:
+            logger.info(f"Участник уже есть: {name}")
+            return web.Response(status=200, text="OK")
+
+        # Создаём участника
+        sb_post("participants", {
+            "name": name,
+            "email": customer_details.get("email"),
+            "telegram_id": telegram_id,
+            "payment_status": "paid",
+            "payment_method": "stripe",
+            "paid_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"✅ Новый участник: {name}, TG: {telegram_id}")
+
+        # Отправляем сообщение в Telegram если есть ID
+        if telegram_id:
+            try:
+                from telegram import Bot
+                bot = Bot(token=BOT_TOKEN)
+                await bot.send_message(
+                    chat_id=int(telegram_id),
+                    text=f"🎉 Привет, {name}!\n\nТвоя оплата получена — добро пожаловать в WAF Predictor!\n\nНапиши /start чтобы начать делать прогнозы на ЧМ 2026! 🏆"
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось отправить сообщение {telegram_id}: {e}")
+
+    return web.Response(status=200, text="OK")
+
+async def run_webhook_server():
+    """Запускает aiohttp сервер для Stripe webhook"""
+    app_web = web.Application()
+    app_web.router.add_post("/stripe/webhook", handle_stripe_webhook)
+    app_web.router.add_get("/health", lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(app_web)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", WEBHOOK_PORT)
+    await site.start()
+    logger.info(f"Webhook сервер запущен на порту {WEBHOOK_PORT}")
+
 async def post_init(app):
     asyncio.create_task(fetch_and_update_results(app))
+    asyncio.create_task(run_webhook_server())
 
 # ============================================
 # ТЕСТ-ТУРНИР
