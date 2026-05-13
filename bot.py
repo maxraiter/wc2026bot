@@ -1487,10 +1487,14 @@ async def handle_stripe_webhook(request):
             logger.warning("Stripe webhook: нет имени участника")
             return web.Response(status=200, text="OK")
 
-        # Проверяем не зарегистрирован ли уже
-        existing = sb_get("participants", {"email": f"eq.{customer_details.get('email', '')}", "select": "id"})
+        # Проверяем не зарегистрирован ли уже — по telegram_id или email
+        existing = []
+        if telegram_id:
+            existing = sb_get("participants", {"telegram_id": f"eq.{telegram_id}", "select": "id"})
+        if not existing and customer_details.get("email"):
+            existing = sb_get("participants", {"email": f"eq.{customer_details.get('email', '')}", "select": "id"})
         if existing:
-            logger.info(f"Участник уже есть: {name}")
+            logger.info(f"Участник уже есть: {name} (telegram_id={telegram_id})")
             return web.Response(status=200, text="OK")
 
         # Создаём участника
