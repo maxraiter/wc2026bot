@@ -270,19 +270,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "👋 Привет! Это бот WAF Predictor — конкурс прогнозов на Чемпионат мира 2026.\n\n"
             "Чтобы участвовать, нужно оплатить взнос 25€.\n"
-            "Если ты уже оплатил — напиши нам, мы исправим ошибку и подключим тебя к боту!"
+            "Если ты уже оплатил — напиши нам, мы исправим!"
         )
         return
+    # Обновляем telegram_username если изменился
+    if user.username and participant.get("telegram_username") != user.username:
+        sb_patch("participants", {"id": f"eq.{participant['id']}"}, {"telegram_username": user.username})
     if not participant.get("favorite_team"):
         await update.message.reply_text(
-            f"👋 Привет, {participant['name']}!\n\nДобро пожаловать на конкурс прогнозов Чемпионата Мира 2026!\n\n"
-            "Прежде чем начать — выбери сборную за которую будешь болеть на турнире! "
-            "Это нужно для командной таблицы.",
+            f"👋 Привет, {participant['name']}!\n\nДобро пожаловать в WAF Predictor!\n\n"
+            "Прежде чем начать — выбери сборную за которую будешь болеть на турнире!",
             reply_markup=teams_keyboard(prefix="fav")
         )
         return
     await update.message.reply_text(
-        f"👋 Привет, {participant['name']}!\n\nДобро пожаловать на конкурс прогнозов Чемпионата Мира 2026!\n\n"
+        f"👋 Привет, {participant['name']}!\n\nДобро пожаловать в WAF Predictor!\n\n"
         "Мы отлично проведем ближайшие 6 недель! Выбери дальнейшие действия в меню.\n\n"
         "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.",
         reply_markup=main_menu_keyboard(user.id)
@@ -1515,20 +1517,7 @@ async def handle_stripe_webhook(request):
         })
         logger.info(f"✅ Новый участник: {name}, TG: {telegram_id}")
 
-        # Отправляем сообщение в Telegram если есть ID
-        if telegram_id:
-            try:
-                import httpx as _httpx
-                _httpx.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": int(telegram_id),
-                        "text": f"🎉 Привет, {name}!\n\nТвоя оплата получена — добро пожаловать в WAF Predictor!\n\nНапиши /start чтобы начать делать прогнозы на ЧМ 2026! 🏆"
-                    }
-                )
-                logger.info(f"✅ Сообщение отправлено {telegram_id}")
-            except Exception as e:
-                logger.warning(f"Не удалось отправить сообщение {telegram_id}: {e}")
+        logger.info(f"Участник создан. Ждём /start от {telegram_id}")
 
     return web.Response(status=200, text="OK")
 
