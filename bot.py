@@ -251,7 +251,7 @@ def main_menu_keyboard(user_id):
     buttons = [
         [InlineKeyboardButton("🏆 Прогноз на ТОП-4 ЧМ 2026", callback_data="menu:part1")],
         [InlineKeyboardButton("⚽ Прогнозы на матчи", callback_data="menu:matches")],
-        [InlineKeyboardButton("👥 Команды", callback_data="menu:teams")],
+        [InlineKeyboardButton("📖 Правила", callback_data="menu:rules")],
         [InlineKeyboardButton("📊 Таблица лидеров", callback_data="menu:leaderboard:0")],
         [InlineKeyboardButton("📋 Мои прогнозы", callback_data="menu:my_predictions")],
     ]
@@ -269,8 +269,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not participant or participant["payment_status"] != "paid":
         await update.message.reply_text(
             "👋 Привет! Это бот WAF Predictor — конкурс прогнозов на Чемпионат мира 2026.\n\n"
-            "Чтобы участвовать, нужно оплатить взнос 25€.\n"
-            "Если ты уже оплатил — напиши нам, мы исправим!"
+            "Чтобы участвовать, нужно оплатить взнос 15€ (350 CZK).\n\n"
+            "Для этого напиши, пожалуйста, нам — @waf_predictor"
         )
         return
     # Обновляем telegram_username если изменился
@@ -286,7 +286,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 Привет, {participant['name']}!\n\nДобро пожаловать в WAF Predictor!\n\n"
         "Мы отлично проведем ближайшие 6 недель! Выбери дальнейшие действия в меню.\n\n"
-        "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.",
+        "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.\n\n"
+        "Чтобы не пропустить главные события ЧМ, подписывайся на наш Telegram канал — @footballwaf",
         reply_markup=main_menu_keyboard(user.id)
     )
 
@@ -307,7 +308,8 @@ async def fav_team_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"🎉 Отлично! Ты болеешь за {team}!\n\n"
         "Мы отлично проведем ближайшие 6 недель! Выбери дальнейшие действия в меню.\n\n"
-        "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.",
+        "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.\n\n"
+        "Также рекомендуем зайти в раздел 📖 Правила и прочитать, как начисляются очки.",
         reply_markup=main_menu_keyboard(user.id)
     )
 
@@ -323,6 +325,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "leaderboard":
         page = int(parts[2]) if len(parts) > 2 else 0
         await show_leaderboard(query, context, page)
+    elif action == "rules":
+        await show_rules(query, context, "main")
     elif action == "teams":
         await show_teams_menu(query, context)
     elif action == "my_predictions":
@@ -1870,6 +1874,104 @@ async def show_teams_leaderboard(query, context, page=0):
     buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="menu:teams")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
+# ============================================
+# ПРАВИЛА
+# ============================================
+
+RULES_TEXT = {
+    "main": (
+        "📖 *Правила WAF Predictor*\n\n"
+        "Ваша цель — набрать как можно больше очков и всех выиграть! "
+        "Здесь вы найдёте основные правила по начислению очков и дедлайнам. "
+        "Советуем пройтись по всем разделам."
+    ),
+    "top4": (
+        "🏆 *ТОП-4 и бомбардир*\n\n"
+        "До старта турнира вы делаете прогноз на ТОП-4. После ЧМ ваши баллы за этот раздел прибавятся к баллам за прогнозы матчей. "
+        "Вы можете получить до 45 баллов, если точно угадаете места команд в турнире:\n\n"
+        "🥇 1 место — *15 баллов*\n"
+        "🥈 2 место — *12 баллов*\n"
+        "🥉 3 место — *10 баллов*\n"
+        "4️⃣ 4 место — *8 баллов*\n\n"
+        "Если вы угадаете лучшего бомбардира — *+8 баллов*. "
+        "Если лучших бомбардиров будет несколько, все участники которые указали этих игроков получат по 8 баллов.\n\n"
+        "⚠️ *ВНИМАНИЕ!* Прогноз на ТОП-4 и лучшего бомбардира закрывается за 5 минут до начала первого матча турнира."
+    ),
+    "matches": (
+        "⚽ *Прогнозы на матчи*\n\n"
+        "Перед каждым игровым днём вы делаете прогнозы на матчи дня. "
+        "Вам нужно просто выбрать счёт матча. "
+        "Также вы можете сделать прогнозы заранее на несколько дней вперёд. "
+        "Приём прогнозов закрывается автоматически за 10 минут до начала первого матча дня. "
+        "После начала первого матча вы не сможете менять прогноз на все матчи дня.\n\n"
+        "Кроме того, каждый игровой день вы можете поставить *X2* на один матч и удвоить очки за него "
+        "(X2 не работает в дни когда всего один матч).\n\n"
+        "⚠️ *ВАЖНО!* Все матчи идущие ночью и ранним утром (например в 6 утра) для удобства "
+        "относятся к предыдущему игровому дню.\n\n"
+        "В разделе «Прогнозы на матчи» всё отсортировано по стадиям турнира и дням."
+    ),
+    "scoring": (
+        "🎯 *Начисление очков*\n\n"
+        "✅ Угадали *точный счёт* — *5 баллов*\n\n"
+        "Пример 1: 🇲🇽 Мексика — 🇿🇦 ЮАР 2:0\n"
+        "Ваш прогноз: 2:0 → *+5 баллов*\n"
+        "Ваш прогноз: 0:2 → *+0 баллов*\n\n"
+        "Пример 2: 🇲🇽 Мексика — 🇿🇦 ЮАР 1:1\n"
+        "Ваш прогноз: 1:1 → *+5 баллов*\n\n"
+        "✅ Угадали *исход и разницу мячей*, но не точный счёт — *3 балла*\n\n"
+        "Пример 1: 🇨🇦 Канада — 🇧🇦 Босния 2:1\n"
+        "Ваш прогноз: 1:0 → *+3 балла*\n\n"
+        "Пример 2: 🇨🇦 Канада — 🇧🇦 Босния 0:0\n"
+        "Ваш прогноз: 1:1 → *+3 балла*\n\n"
+        "✅ Угадали только *победителя*, но не разницу — *2 балла*\n\n"
+        "Пример: 🇺🇸 США — 🇵🇾 Парагвай 1:3\n"
+        "Ваш прогноз: 0:1 → *+2 балла*\n\n"
+        "❌ Не угадали исход — *0 баллов*"
+    ),
+    "calc": (
+        "📊 *Подсчёт очков*\n\n"
+        "Очки за каждый игровой день начисляются не позднее утра следующего дня после окончания всех игр. "
+        "В некоторых случаях это будет гораздо быстрее — сразу после окончания матчей.\n\n"
+        "Таблица обновляется в реальном времени сразу после изменения очков. "
+        "Её можно увидеть в разделе 📊 *Таблица лидеров*."
+    ),
+}
+
+def rules_keyboard(current=None):
+    sections = [
+        ("top4", "🏆 ТОП-4 и бомбардир"),
+        ("matches", "⚽ Прогнозы на матчи"),
+        ("scoring", "🎯 Начисление очков"),
+        ("calc", "📊 Подсчёт очков"),
+    ]
+    buttons = []
+    row = []
+    for key, label in sections:
+        if key != current:
+            row.append(InlineKeyboardButton(label, callback_data=f"rules:{key}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
+    return InlineKeyboardMarkup(buttons)
+
+async def show_rules(query, context, section="main"):
+    text = RULES_TEXT.get(section, RULES_TEXT["main"])
+    await query.edit_message_text(
+        text,
+        reply_markup=rules_keyboard(current=section if section != "main" else None),
+        parse_mode="Markdown"
+    )
+
+async def rules_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    section = query.data.split(":")[1] if ":" in query.data else "main"
+    await show_rules(query, context, section)
+
+
 TEST_TEAMS_EPL = [
     "Liverpool", "Chelsea", "Brighton", "Wolves",
     "Fulham", "Bournemouth", "Sunderland", "Man United",
@@ -2633,6 +2735,7 @@ def main():
 
     app.add_handler(CallbackQueryHandler(show_my_predictions_stage, pattern="^mypred:"))
     app.add_handler(CallbackQueryHandler(admin_delete_user, pattern="^admin_delete:"))
+    app.add_handler(CallbackQueryHandler(rules_handler, pattern="^rules:"))
     app.add_handler(CallbackQueryHandler(back_handler, pattern="^back:"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^noop$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_text_handler))
