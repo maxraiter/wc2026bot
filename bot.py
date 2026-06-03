@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
     ADMIN_PART1_1ST, ADMIN_PART1_2ND, ADMIN_PART1_3RD, ADMIN_PART1_4TH, ADMIN_PART1_SCORER,
     SETTEAMS_HOME, SETTEAMS_AWAY,
     FAV_TEAM,
-) = range(19)
+    ADMIN_BROADCAST,
+) = range(20)
 
 TEAMS = [
     "🇫🇷 Франция", "🇪🇸 Испания", "🇦🇷 Аргентина", "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Англия",
@@ -1044,6 +1045,7 @@ async def show_admin_panel(query, context):
         [InlineKeyboardButton("🔄 Обнулить итоги Топ-4", callback_data="admin:part1_reset")],
         [InlineKeyboardButton("📋 Список участников", callback_data="admin:list_users")],
         [InlineKeyboardButton("🗑 Удалить участника", callback_data="admin:delete_user")],
+        [InlineKeyboardButton("📢 Разослать сообщение", callback_data="admin:broadcast")],
         [InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")],
     ]))
 
@@ -1109,6 +1111,14 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ Итоги Топ-4 обнулены для {len(preds)} участников.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu:admin")]])
         )
+
+    elif action == "broadcast":
+        await query.edit_message_text(
+            "📢 Рассылка сообщений\n\nНапиши текст сообщения которое получат все участники:\n\n"
+            "Поддерживается *жирный* и _курсив_ (Markdown).",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Отмена", callback_data="menu:admin")]])
+        )
+        return ADMIN_BROADCAST
 
     elif action == "delete_user":
         users = sb_get("participants", {"select": "id,name,telegram_username", "order": "name"})
@@ -1536,6 +1546,36 @@ async def run_webhook_server():
     await site.start()
     logger.info(f"Webhook сервер запущен на порту {WEBHOOK_PORT}")
 
+async def admin_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if not is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    participants = sb_get("participants", {"select": "telegram_id,name", "payment_status": "eq.paid"})
+    sent = 0
+    failed = 0
+    for p in participants:
+        if not p.get("telegram_id"):
+            failed += 1
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=int(p["telegram_id"]),
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📋 Главное меню", callback_data="back:main")
+                ]])
+            )
+            sent += 1
+        except Exception as e:
+            logger.warning(f"Не удалось отправить {p['telegram_id']}: {e}")
+            failed += 1
+    await update.message.reply_text(
+        f"✅ Рассылка завершена!\n\n📨 Отправлено: {sent}\n❌ Не доставлено: {failed}",
+        reply_markup=main_menu_keyboard(update.effective_user.id)
+    )
+    return ConversationHandler.END
+
 async def post_init(app):
     asyncio.create_task(fetch_and_update_results(app))
     asyncio.create_task(run_webhook_server())
@@ -1926,7 +1966,9 @@ RULES_TEXT = {
         "✅ Угадали только *победителя*, но не разницу — *2 балла*\n\n"
         "Пример: 🇺🇸 США — 🇵🇾 Парагвай 1:3\n"
         "Ваш прогноз: 0:1 → *+2 балла*\n\n"
-        "❌ Не угадали исход — *0 баллов*"
+        "❌ Не угадали исход — *0 баллов*\n\n"
+        "⚽ *В матчах плей-офф* очки начисляются по счёту после основного или дополнительного времени. "
+        "При пенальти засчитывается счёт после доп. времени."
     ),
     "calc": (
         "📊 *Подсчёт очков*\n\n"
@@ -2687,6 +2729,14 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+    broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_callback, pattern="^admin:broadcast$")],
+        states={
+            ADMIN_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_message)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    app.add_handler(broadcast_conv)
     app.add_handler(team_create_conv)
     app.add_handler(team_join_conv)
     app.add_handler(team_rename_conv)
