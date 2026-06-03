@@ -288,7 +288,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 Привет, {participant['name']}!\n\nДобро пожаловать в WAF Predictor!\n\n"
         "Мы отлично проведем ближайшие 6 недель! Выбери дальнейшие действия в меню.\n\n"
         "Советуем начать с прогноза на ТОП-4 чемпионата. Сделать его можно только до старта турнира.\n\n"
-        "Чтобы не пропустить главные события ЧМ, подписывайся на наш Telegram канал — @footballwaf",
+        "Чтобы не пропустить главные события ЧМ, подписывайся на наш Telegram канал — @footballwaf\n\n"
+        "Если у вас есть какие-то проблемы с ботом — напишите нам @waf_predictor, мы всё быстро исправим.",
         reply_markup=main_menu_keyboard(user.id)
     )
 
@@ -944,11 +945,9 @@ async def show_teams_leaderboard(update: Update, context: ContextTypes.DEFAULT_T
 async def fetch_and_update_results(app):
     while True:
         try:
-            await check_match_results()
-            await check_test_match_results()
             await send_deadline_reminders(app)
         except Exception as e:
-            logger.error(f"Ошибка при получении результатов: {e}")
+            logger.error(f"Ошибка планировщика: {e}")
         await asyncio.sleep(15 * 60)
 
 async def send_deadline_reminders(app):
