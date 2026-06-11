@@ -848,7 +848,7 @@ async def show_my_predictions_stage(update: Update, context: ContextTypes.DEFAUL
 # ============================================
 
 async def show_leaderboard(query, context, page=0):
-    per_page = 10
+    per_page = 15
     offset = page * per_page
     lb = sb_get("leaderboard", {
         "select": "total_points,rank,participants(name,favorite_team)",
