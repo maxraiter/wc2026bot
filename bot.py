@@ -105,6 +105,7 @@ DAY_STAGE = {
 STAGES_ORDER = ["group1", "group2", "group3", "r32", "r16", "qf", "sf", "3rd", "final"]
 DIRECT_STAGES = {"3rd", "final"}
 NO_DOUBLE_STAGES = {"qf", "sf", "3rd", "final"}
+SINGLE_MATCH_DAYS = {18, 28, 29, 31, 32, 33, 34}
 PLAYOFF_STAGES = {"r32", "r16", "qf", "sf", "3rd", "final"}
 
 def format_fans(n):
@@ -254,6 +255,7 @@ def main_menu_keyboard(user_id):
         [InlineKeyboardButton("⚽ Прогнозы на матчи", callback_data="menu:matches")],
         [InlineKeyboardButton("📖 Правила", callback_data="menu:rules")],
         [InlineKeyboardButton("📊 Таблица лидеров", callback_data="menu:leaderboard:0")],
+        [InlineKeyboardButton("🎯 Точные результаты", callback_data="menu:exact:0")],
         [InlineKeyboardButton("📋 Мои прогнозы", callback_data="menu:my_predictions")],
     ]
     if is_admin(user_id):
@@ -331,6 +333,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_rules(query, context, "main")
     elif action == "teams":
         await show_teams_menu(query, context)
+    elif action == "exact":
+        page = int(parts[2]) if len(parts) > 2 else 0
+        await show_exact_leaderboard(query, context, page)
     elif action == "my_predictions":
         await show_my_predictions_menu(query, context)
     elif action == "admin":
@@ -650,20 +655,18 @@ async def show_game_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 label = f"✅ {m['home_team']} {real} {m['away_team']} (прогноза не было)"
             buttons.append([InlineKeyboardButton(label, callback_data="noop")])
-        elif pred:
-            score = f"{pred['home_score_pred']}:{pred['away_score_pred']}"
-            double_mark = " 🔥×2" if pred["is_double"] else ""
-            lock = "🔒 " if locked else "📝 "
-            label = f"{lock}{m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
-            if not locked and not tbd:
-                buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
-            else:
-                buttons.append([InlineKeyboardButton(label, callback_data="noop")])
         else:
-            num = f"Матч {m.get('match_number', '')}. " if m["home_team"] == "TBD" else ""
-            lock = "🔒 " if locked else ""
-            label = f"{lock}{num}{m['home_team']} — : — {m['away_team']} {time_str}"
-            if not locked and not tbd:
+            this_tbd = m["home_team"] == "TBD" or m["away_team"] == "TBD"
+            num = f"Матч {m.get('match_number', '')}. " if this_tbd else ""
+            if pred:
+                score = f"{pred['home_score_pred']}:{pred['away_score_pred']}"
+                double_mark = " 🔥×2" if pred["is_double"] else ""
+                lock = "🔒 " if locked else "📝 "
+                label = f"{lock}{m['home_team']} {score} {m['away_team']} {time_str}{double_mark}"
+            else:
+                lock = "🔒 " if locked else ""
+                label = f"{lock}{num}{m['home_team']} — : — {m['away_team']} {time_str}"
+            if not locked and not this_tbd:
                 buttons.append([InlineKeyboardButton(label, callback_data=f"predict:{m['id']}")])
             else:
                 buttons.append([InlineKeyboardButton(label, callback_data="noop")])
@@ -695,7 +698,7 @@ async def start_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
     day = sb_get("game_days", {"id": f"eq.{match['game_day_id']}", "select": "day_number"})[0]
     stage = DAY_STAGE.get(day["day_number"], "group1")
-    no_double = stage in NO_DOUBLE_STAGES
+    no_double = stage in NO_DOUBLE_STAGES or day["day_number"] in SINGLE_MATCH_DAYS
     context.user_data[f"no_double_{match_id}"] = no_double
     existing = sb_get("predictions", {"participant_id": f"eq.{participant['id']}", "match_id": f"eq.{match_id}", "select": "*"})
     if existing:
@@ -851,8 +854,8 @@ async def show_leaderboard(query, context, page=0):
     per_page = 15
     offset = page * per_page
     lb = sb_get("leaderboard", {
-        "select": "total_points,rank,participants(name,favorite_team)",
-        "order": "total_points.desc",
+        "select": "total_points,rank,participant_id,participants(name,favorite_team)",
+        "order": "total_points.desc,rank.asc",
         "limit": str(per_page),
         "offset": str(offset),
     })
@@ -2011,6 +2014,70 @@ async def rules_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     section = query.data.split(":")[1] if ":" in query.data else "main"
     await show_rules(query, context, section)
+
+
+def get_exact_count(participant_id):
+    """Считает количество точных счетов участника"""
+    preds = sb_get("predictions", {
+        "participant_id": f"eq.{participant_id}",
+        "select": "points_earned,is_double"
+    })
+    count = 0
+    for p in preds:
+        pts = p["points_earned"]
+        if p["is_double"]:
+            pts = pts // 2
+        if pts == 5:
+            count += 1
+    return count
+
+async def show_exact_leaderboard(query, context, page=0):
+    per_page = 15
+    offset = page * per_page
+    all_lb = sb_get("leaderboard", {
+        "select": "total_points,participant_id,participants(name,favorite_team)",
+        "order": "total_points.desc",
+    })
+    # Считаем точные результаты для каждого
+    ranked = []
+    for entry in all_lb:
+        exact = get_exact_count(entry["participant_id"])
+        ranked.append({
+            "name": entry["participants"]["name"],
+            "fav": entry["participants"].get("favorite_team", ""),
+            "exact": exact,
+            "total": entry["total_points"],
+        })
+    # Сортируем по точным результатам, при равенстве — по очкам
+    ranked.sort(key=lambda x: (x["exact"], x["total"]), reverse=True)
+
+    total_count = len(ranked)
+    chunk = ranked[offset:offset + per_page]
+    user = query.from_user
+    participant = get_participant(str(user.id))
+
+    # Находим место текущего пользователя
+    my_exact = get_exact_count(participant["id"])
+    my_rank = next((i+1 for i, r in enumerate(ranked) if r["name"] == participant.get("name", "")), "—")
+
+    text = f"🎯 Точные результаты ({offset+1}-{min(offset+per_page, total_count)} из {total_count})\n\n"
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    for i, entry in enumerate(chunk, offset + 1):
+        flag = entry["fav"].split(" ")[0] if entry["fav"] else ""
+        medal = medals.get(i, f"{i}.")
+        text += f"{medal} {entry['name']} {flag} — {entry['exact']} точных\n"
+    text += f"\n👤 Твоё место: {my_rank} — {my_exact} точных"
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"menu:exact:{page-1}"))
+    if offset + per_page < total_count:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"menu:exact:{page+1}"))
+    buttons = []
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
 TEST_TEAMS_EPL = [
