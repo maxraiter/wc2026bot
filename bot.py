@@ -2065,8 +2065,8 @@ async def show_exact_leaderboard(query, context, page=0):
     for i, entry in enumerate(chunk, offset + 1):
         flag = entry["fav"].split(" ")[0] if entry["fav"] else ""
         medal = medals.get(i, f"{i}.")
-        text += f"{medal} {entry['name']} {flag} — {entry['exact']} точных\n"
-    text += f"\n👤 Твоё место: {my_rank} — {my_exact} точных"
+        text += f"{medal} {entry['name']} {flag} — {entry['exact']}\n"
+    text += f"\n👤 Твоё место: {my_rank} — {my_exact}"
 
     nav = []
     if page > 0:
