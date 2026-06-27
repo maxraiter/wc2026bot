@@ -2144,6 +2144,7 @@ async def rivals_day_matches(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     day_id = query.data.split(":")[2]
+    context.user_data["rivals_day_id"] = day_id
     day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "*"})[0]
     matches = sb_get("matches", {"game_day_id": f"eq.{day_id}", "select": "*", "order": "kickoff_at"})
     stage = DAY_STAGE.get(day["day_number"], "group1")
@@ -2153,7 +2154,9 @@ async def rivals_day_matches(update: Update, context: ContextTypes.DEFAULT_TYPE)
             label = f"✅ {m['home_team']} {m['home_score']}:{m['away_score']} {m['away_team']}"
         else:
             label = f"{m['home_team']} — {m['away_team']}"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"rivals:match:{m['id']}:{day_id}")])
+        # Используем только match_id — укорачиваем до первых 8 символов не нужно, UUID короткий
+        cb = f"rivals:match:{m['id']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
     buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:stage:{stage}")])
     date_str = DAY_DATES.get(day["day_number"], "")
     await query.edit_message_text(
@@ -2166,8 +2169,9 @@ async def rivals_match_preds(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     parts = query.data.split(":")
     match_id = parts[2]
-    day_id = parts[3]
+    day_id = context.user_data.get("rivals_day_id", "")
     match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
+    day_id = day_id or match["game_day_id"]
     day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "day_number"})[0]
     preds = sb_get("predictions", {
         "match_id": f"eq.{match_id}",
