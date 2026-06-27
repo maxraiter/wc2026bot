@@ -256,6 +256,7 @@ def main_menu_keyboard(user_id):
         [InlineKeyboardButton("📖 Правила", callback_data="menu:rules")],
         [InlineKeyboardButton("📊 Таблица лидеров", callback_data="menu:leaderboard:0")],
         [InlineKeyboardButton("🎯 Точные результаты", callback_data="menu:exact:0")],
+        [InlineKeyboardButton("👀 Прогнозы соперников", callback_data="rivals:stages")],
         [InlineKeyboardButton("📋 Мои прогнозы", callback_data="menu:my_predictions")],
     ]
     if is_admin(user_id):
@@ -2080,6 +2081,122 @@ async def show_exact_leaderboard(query, context, page=0):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
+# ============================================
+# ПРОГНОЗЫ СОПЕРНИКОВ
+# ============================================
+
+async def rivals_stages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    now = datetime.now(timezone.utc)
+    days = sb_get("game_days", {"select": "*", "order": "day_number"})
+    stages_present = set()
+    for d in days:
+        deadline = datetime.fromisoformat(d["deadline"].replace("Z", "+00:00"))
+        if now >= deadline:
+            stages_present.add(DAY_STAGE.get(d["day_number"], "group1"))
+    if not stages_present:
+        await query.edit_message_text(
+            "Пока нет завершённых дней.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")]])
+        )
+        return
+    buttons = []
+    for stage in STAGES_ORDER:
+        if stage not in stages_present:
+            continue
+        emoji = STAGE_EMOJI.get(stage, "📁")
+        buttons.append([InlineKeyboardButton(f"{emoji} {STAGE_LABELS[stage]}", callback_data=f"rivals:stage:{stage}")])
+    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
+    await query.edit_message_text("👀 Прогнозы соперников\n\nВыбери этап:", reply_markup=InlineKeyboardMarkup(buttons))
+
+async def rivals_stage_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    stage = query.data.split(":")[2]
+    now = datetime.now(timezone.utc)
+    days = sb_get("game_days", {"select": "*", "order": "day_number"})
+    buttons = []
+    for day in days:
+        if DAY_STAGE.get(day["day_number"]) != stage:
+            continue
+        deadline = datetime.fromisoformat(day["deadline"].replace("Z", "+00:00"))
+        if now < deadline:
+            continue
+        date_str = DAY_DATES.get(day["day_number"], "")
+        matches = sb_get("matches", {"game_day_id": f"eq.{day['id']}", "select": "id"})
+        label = f"📅 День {day['day_number']} — {date_str} ({len(matches)} матчей)"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"rivals:day:{day['id']}")])
+    if not buttons:
+        await query.edit_message_text(
+            "Нет доступных дней.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="rivals:stages")]])
+        )
+        return
+    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="rivals:stages")])
+    stage_label = STAGE_LABELS.get(stage, "")
+    await query.edit_message_text(
+        f"👀 {stage_label}\n\nВыбери день:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def rivals_day_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    day_id = query.data.split(":")[2]
+    day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "*"})[0]
+    matches = sb_get("matches", {"game_day_id": f"eq.{day_id}", "select": "*", "order": "kickoff_at"})
+    stage = DAY_STAGE.get(day["day_number"], "group1")
+    buttons = []
+    for m in matches:
+        if m.get("is_finished"):
+            label = f"✅ {m['home_team']} {m['home_score']}:{m['away_score']} {m['away_team']}"
+        else:
+            label = f"{m['home_team']} — {m['away_team']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"rivals:match:{m['id']}:{day_id}")])
+    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:stage:{stage}")])
+    date_str = DAY_DATES.get(day["day_number"], "")
+    await query.edit_message_text(
+        f"👀 День {day['day_number']} — {date_str}\nВыбери матч:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def rivals_match_preds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    match_id = parts[2]
+    day_id = parts[3]
+    match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
+    day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "day_number"})[0]
+    preds = sb_get("predictions", {
+        "match_id": f"eq.{match_id}",
+        "select": "home_score_pred,away_score_pred,is_double,points_earned,is_calculated,participant_id,participants(name)"
+    })
+    text = f"👀 {match['home_team']} — {match['away_team']}\n"
+    if match.get("is_finished"):
+        text += f"Результат: {match['home_score']}:{match['away_score']}\n\n"
+    else:
+        text += "\n"
+    if not preds:
+        text += "Прогнозов нет."
+    else:
+        for p in sorted(preds, key=lambda x: x["points_earned"], reverse=True):
+            name = p["participants"]["name"]
+            pred_score = f"{p['home_score_pred']}:{p['away_score_pred']}"
+            double = " 🔥×2" if p["is_double"] else ""
+            if p["is_calculated"]:
+                pts = p["points_earned"]
+                icon = "✅" if pts > 0 else "❌"
+                text += f"{icon} {name}: {pred_score}{double} +{format_points(pts)}\n"
+            else:
+                text += f"📝 {name}: {pred_score}{double}\n"
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:day:{day_id}")]])
+    )
+
+
 TEST_TEAMS_EPL = [
     "Liverpool", "Chelsea", "Brighton", "Wolves",
     "Fulham", "Bournemouth", "Sunderland", "Man United",
@@ -2852,6 +2969,10 @@ def main():
     app.add_handler(CallbackQueryHandler(show_my_predictions_stage, pattern="^mypred:"))
     app.add_handler(CallbackQueryHandler(admin_delete_user, pattern="^admin_delete:"))
     app.add_handler(CallbackQueryHandler(rules_handler, pattern="^rules:"))
+    app.add_handler(CallbackQueryHandler(rivals_stages, pattern="^rivals:stages$"))
+    app.add_handler(CallbackQueryHandler(rivals_stage_days, pattern="^rivals:stage:"))
+    app.add_handler(CallbackQueryHandler(rivals_day_matches, pattern="^rivals:day:"))
+    app.add_handler(CallbackQueryHandler(rivals_match_preds, pattern="^rivals:match:"))
     app.add_handler(CallbackQueryHandler(back_handler, pattern="^back:"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^noop$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, tpart1_text_handler))
