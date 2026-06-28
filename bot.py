@@ -2124,8 +2124,8 @@ async def rivals_stage_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if now < deadline:
             continue
         date_str = DAY_DATES.get(day["day_number"], "")
-        matches = sb_get("matches", {"game_day_id": f"eq.{day['id']}", "select": "id"})
-        label = f"📅 День {day['day_number']} — {date_str} ({len(matches)} матчей)"
+        matches_count = len(sb_get("matches", {"game_day_id": f"eq.{day['id']}", "select": "id"}))
+        label = f"📅 День {day['day_number']} — {date_str} ({matches_count} матчей)"
         buttons.append([InlineKeyboardButton(label, callback_data=f"rivals:day:{day['id']}")])
     if not buttons:
         await query.edit_message_text(
@@ -2139,140 +2139,6 @@ async def rivals_stage_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👀 {stage_label}\n\nВыбери день:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
-
-async def rivals_day_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    day_id = query.data.split(":")[2]
-    context.user_data["rivals_day_id"] = day_id
-    day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "*"})[0]
-    matches = sb_get("matches", {"game_day_id": f"eq.{day_id}", "select": "*", "order": "kickoff_at"})
-    stage = DAY_STAGE.get(day["day_number"], "group1")
-    buttons = []
-    for m in matches:
-        if m.get("is_finished"):
-            label = f"✅ {m['home_team']} {m['home_score']}:{m['away_score']} {m['away_team']}"
-        else:
-            label = f"{m['home_team']} — {m['away_team']}"
-        # Используем только match_id — укорачиваем до первых 8 символов не нужно, UUID короткий
-        cb = f"rivals:match:{m['id']}"
-        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
-    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:stage:{stage}")])
-    date_str = DAY_DATES.get(day["day_number"], "")
-    await query.edit_message_text(
-        f"👀 День {day['day_number']} — {date_str}\nВыбери матч:",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-async def rivals_match_preds(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    parts = query.data.split(":")
-    match_id = parts[2]
-    day_id = context.user_data.get("rivals_day_id", "")
-    match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
-    day_id = day_id or match["game_day_id"]
-    day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "day_number"})[0]
-    preds = sb_get("predictions", {
-        "match_id": f"eq.{match_id}",
-        "select": "home_score_pred,away_score_pred,is_double,points_earned,is_calculated,participant_id,participants(name)"
-    })
-    text = f"👀 {match['home_team']} — {match['away_team']}\n"
-    if match.get("is_finished"):
-        text += f"Результат: {match['home_score']}:{match['away_score']}\n\n"
-    else:
-        text += "\n"
-    if not preds:
-        text += "Прогнозов нет."
-    else:
-        for p in sorted(preds, key=lambda x: x["points_earned"], reverse=True):
-            name = p["participants"]["name"]
-            pred_score = f"{p['home_score_pred']}:{p['away_score_pred']}"
-            double = " 🔥×2" if p["is_double"] else ""
-            if p["is_calculated"]:
-                pts = p["points_earned"]
-                icon = "✅" if pts > 0 else "❌"
-                text += f"{icon} {name}: {pred_score}{double} +{format_points(pts)}\n"
-            else:
-                text += f"📝 {name}: {pred_score}{double}\n"
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:day:{day_id}")]])
-    )
-
-
-TEST_TEAMS_EPL = [
-    "Liverpool", "Chelsea", "Brighton", "Wolves",
-    "Fulham", "Bournemouth", "Sunderland", "Man United",
-    "Man City", "Brentford",
-]
-
-TEST_TEAMS_BUN = [
-    "Hoffenheim", "Werder Bremen", "Augsburg", "M'gladbach",
-    "Stuttgart", "Leverkusen", "RB Leipzig", "St. Pauli",
-    "Wolfsburg", "Bayern Munich",
-]
-
-TEST_TOURNAMENTS = {
-    "EPL": "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Английская Премьер-лига",
-    "BUN": "🇩🇪 Бундеслига",
-}
-
-def get_test_menu_kb(user_id):
-    buttons = [
-        [InlineKeyboardButton("🏆 Топ-4 дня", callback_data="test:part1")],
-        [InlineKeyboardButton("🏴󠁧󠁢󠁥󠁮󠁧󠁿 Премьер-лига", callback_data="test:matches:EPL")],
-        [InlineKeyboardButton("🇩🇪 Бундеслига", callback_data="test:matches:BUN")],
-        [InlineKeyboardButton("📊 Таблица лидеров", callback_data="test:leaderboard:0")],
-        [InlineKeyboardButton("📋 Мои прогнозы", callback_data="test:my_preds")],
-    ]
-    if is_admin(user_id):
-        buttons.append([InlineKeyboardButton("🔧 Ввести результат", callback_data="test:admin_result")])
-        buttons.append([InlineKeyboardButton("🥇 Итоги Топ-4", callback_data="test:admin_part1")])
-    buttons.append([InlineKeyboardButton("◀️ Главное меню", callback_data="back:main")])
-    return InlineKeyboardMarkup(buttons)
-
-def test_teams_keyboard(teams, prefix="ttest", page=0):
-    per_page = 10
-    start = page * per_page
-    chunk = teams[start:start + per_page]
-    buttons = []
-    row = []
-    for team in chunk:
-        row.append(InlineKeyboardButton(team, callback_data=f"{prefix}:{team}"))
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Другие", callback_data=f"{prefix}_page:{page-1}"))
-    if start + per_page < len(teams):
-        nav.append(InlineKeyboardButton("Другие ▶️", callback_data=f"{prefix}_page:{page+1}"))
-    if nav:
-        buttons.append(nav)
-    return InlineKeyboardMarkup(buttons)
-
-def test_score_keyboard(match_id, home_score=None, away_score=None, is_double=False):
-    digits = [str(i) for i in range(8)]
-    home_row = [InlineKeyboardButton("✅" if str(home_score) == d else d, callback_data=f"tsh:{match_id}:{d}") for d in digits]
-    away_row = [InlineKeyboardButton("✅" if str(away_score) == d else d, callback_data=f"tsa:{match_id}:{d}") for d in digits]
-    buttons = [home_row, away_row]
-    if home_score is not None and away_score is not None:
-        double_label = "🔥 X2 — ВКЛ (нажми чтобы выкл)" if is_double else "🔥 Сделать этот матч X2"
-        buttons.append([InlineKeyboardButton(double_label, callback_data=f"tdouble:{match_id}")])
-        buttons.append([InlineKeyboardButton(f"✅ Сохранить {home_score}:{away_score}", callback_data=f"tsave:{match_id}")])
-    return InlineKeyboardMarkup(buttons)
-
-def test_admin_score_keyboard(match_id, home_score=None, away_score=None):
-    digits = [str(i) for i in range(8)]
-    home_row = [InlineKeyboardButton("✅" if str(home_score) == d else d, callback_data=f"tash:{match_id}:{d}") for d in digits]
-    away_row = [InlineKeyboardButton("✅" if str(away_score) == d else d, callback_data=f"tasa:{match_id}:{d}") for d in digits]
-    buttons = [home_row, away_row]
-    if home_score is not None and away_score is not None:
-        buttons.append([InlineKeyboardButton(f"✅ Сохранить результат {home_score}:{away_score}", callback_data=f"tasave:{match_id}")])
-    return InlineKeyboardMarkup(buttons)
 
 async def test_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
