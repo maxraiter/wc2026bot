@@ -2140,6 +2140,63 @@ async def rivals_stage_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
+
+async def rivals_day_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    day_id = query.data.split(":")[2]
+    context.user_data["rivals_day_id"] = day_id
+    day = sb_get("game_days", {"id": f"eq.{day_id}", "select": "*"})[0]
+    matches = sb_get("matches", {"game_day_id": f"eq.{day_id}", "select": "*", "order": "kickoff_at"})
+    stage = DAY_STAGE.get(day["day_number"], "group1")
+    buttons = []
+    for m in matches:
+        if m.get("is_finished"):
+            label = f"✅ {m['home_team']} {m['home_score']}:{m['away_score']} {m['away_team']}"
+        else:
+            label = f"{m['home_team']} — {m['away_team']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"rivals:match:{m['id']}")])
+    buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:stage:{stage}")])
+    date_str = DAY_DATES.get(day["day_number"], "")
+    await query.edit_message_text(
+        f"👀 День {day['day_number']} — {date_str}\nВыбери матч:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def rivals_match_preds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    match_id = query.data.split(":")[2]
+    day_id = context.user_data.get("rivals_day_id", "")
+    match = sb_get("matches", {"id": f"eq.{match_id}", "select": "*"})[0]
+    day_id = day_id or match["game_day_id"]
+    preds = sb_get("predictions", {
+        "match_id": f"eq.{match_id}",
+        "select": "home_score_pred,away_score_pred,is_double,points_earned,is_calculated,participant_id,participants(name)"
+    })
+    text = f"👀 {match['home_team']} — {match['away_team']}\n"
+    if match.get("is_finished"):
+        text += f"Результат: {match['home_score']}:{match['away_score']}\n\n"
+    else:
+        text += "\n"
+    if not preds:
+        text += "Прогнозов нет."
+    else:
+        for p in sorted(preds, key=lambda x: x["points_earned"], reverse=True):
+            name = p["participants"]["name"]
+            pred_score = f"{p['home_score_pred']}:{p['away_score_pred']}"
+            double = " 🔥×2" if p["is_double"] else ""
+            if p["is_calculated"]:
+                pts = p["points_earned"]
+                icon = "✅" if pts > 0 else "❌"
+                text += f"{icon} {name}: {pred_score}{double} +{format_points(pts)}\n"
+            else:
+                text += f"📝 {name}: {pred_score}{double}\n"
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=f"rivals:day:{day_id}")]])
+    )
+
 async def test_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
