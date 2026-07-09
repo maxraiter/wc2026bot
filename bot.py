@@ -104,7 +104,7 @@ DAY_STAGE = {
 }
 STAGES_ORDER = ["group1", "group2", "group3", "r32", "r16", "qf", "sf", "3rd", "final"]
 DIRECT_STAGES = {"3rd", "final"}
-NO_DOUBLE_STAGES = {"qf", "sf", "3rd", "final"}
+NO_DOUBLE_STAGES = {"sf", "3rd", "final"}
 SINGLE_MATCH_DAYS = {18, 28, 29, 31, 32, 33, 34}
 PLAYOFF_STAGES = {"r32", "r16", "qf", "sf", "3rd", "final"}
 
